@@ -1139,18 +1139,18 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-white px-6 py-10">
+    <main className="min-h-screen bg-zinc-950 text-white px-4 py-6 sm:px-6 sm:py-10">
       <div className="mx-auto max-w-7xl">
-        <div className="mb-10 flex items-start justify-between gap-6">
-          <div>
-            <h1 className="text-5xl font-bold">Mejl Generator</h1>
+        <div className="mb-6 flex flex-col gap-4 sm:mb-10 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+          <div className="min-w-0">
+            <h1 className="text-3xl font-bold sm:text-5xl">Mejl Generator</h1>
 
-            <p className="mt-3 text-zinc-400">
+            <p className="mt-2 text-sm text-zinc-400 sm:mt-3 sm:text-base">
               Unesi delatnost, grad i broj rezultata.
             </p>
           </div>
 
-          <div className="flex items-start gap-4">
+          <div className="flex shrink-0 items-center justify-end gap-3 sm:gap-4">
             <div ref={bellRef} className="relative">
               <button
                 onClick={() => {
@@ -1172,7 +1172,7 @@ export default function Home() {
               </button>
 
               {bellOpen && (
-                <div className="absolute right-0 top-14 z-40 w-[420px] rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-xl">
+                <div className="absolute right-0 top-14 z-40 w-[min(100vw-2rem,420px)] rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-xl">
                   <h3 className="mb-3 text-lg font-bold">Podeljeno sa mnom</h3>
 
                   {sharedNotifications.length === 0 ? (
@@ -1249,7 +1249,7 @@ export default function Home() {
               </button>
 
               {profileOpen && (
-                <div className="absolute right-0 top-14 z-40 w-96 rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
+                <div className="absolute right-0 top-14 z-40 w-[min(100vw-2rem,24rem)] rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-xl sm:w-96 sm:p-6">
                   <div className="flex flex-col items-center">
                     <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-green-700 text-4xl font-bold text-white">
                       {avatarUrl ? (
@@ -1335,8 +1335,8 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="rounded-2xl bg-zinc-900 p-6">
-          <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-2xl bg-zinc-900 p-4 sm:p-6">
+          <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
             <input
               value={profession}
               onChange={(e) => setProfession(e.target.value)}
@@ -1365,11 +1365,11 @@ export default function Home() {
             <p className="mt-4 text-sm text-red-400">{searchError}</p>
           )}
 
-          <div className="mt-5 flex gap-3">
+          <div className="mt-4 flex flex-col gap-3 sm:mt-5 sm:flex-row">
             <button
               onClick={generateLeads}
               disabled={!canSearch || loading}
-              className={`rounded-xl px-6 py-3 font-semibold transition ${
+              className={`rounded-xl px-6 py-3 font-semibold transition sm:flex-1 lg:flex-none ${
                 canSearch
                   ? "bg-white text-black hover:opacity-90"
                   : "cursor-not-allowed bg-zinc-700 text-zinc-400"
@@ -1380,7 +1380,7 @@ export default function Home() {
 
             <button
               onClick={toggleHistory}
-              className="rounded-xl bg-zinc-800 px-6 py-3 font-semibold text-white transition hover:bg-zinc-700"
+              className="rounded-xl bg-zinc-800 px-6 py-3 font-semibold text-white transition hover:bg-zinc-700 sm:flex-1 lg:flex-none"
             >
               Istorija
             </button>
@@ -1401,11 +1401,11 @@ export default function Home() {
                   <div
                     key={item.id}
                     onClick={() => openHistoryItem(item)}
-                    className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-zinc-800 bg-zinc-950 px-5 py-4 transition hover:bg-zinc-800"
+                    className="flex cursor-pointer flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-4 transition hover:bg-zinc-800 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-5"
                   >
-                    <div className="font-semibold">{item.title}</div>
+                    <div className="min-w-0 font-semibold">{item.title}</div>
 
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center justify-between gap-3 sm:justify-end sm:gap-4">
                       <div className="text-sm text-zinc-400">
                         {formatOnlyDate(item.created_at)}
                       </div>
@@ -1438,115 +1438,231 @@ export default function Home() {
             )}
           </div>
         ) : (
-          <div className="mt-8 overflow-x-auto rounded-2xl border border-zinc-800">
-            <table className="w-full min-w-[1250px] text-left">
-              <thead className="bg-zinc-900">
-                <tr>
-                  <th className="px-4 py-4 text-center">RB</th>
-                  <th className="px-4 py-4">Firma</th>
-                  <th className="px-4 py-4">Vlasnik</th>
-                  <th className="px-4 py-4">Email</th>
-                  <th className="px-4 py-4 text-center">Google Maps</th>
-                  <th className="px-4 py-4 text-center">Proposal</th>
-                  <th className="px-4 py-4 text-center" colSpan={3}>
-                    poslati mejlovi
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {leads.map((lead, index) => (
-                  <tr
+          <>
+            <div className="mt-6 space-y-4 lg:hidden">
+              {leads.length === 0 ? (
+                <p className="rounded-2xl border border-zinc-800 bg-zinc-900/50 px-4 py-8 text-center text-sm text-zinc-400">
+                  Nema rezultata. Pokrenite pretragu.
+                </p>
+              ) : (
+                leads.map((lead, index) => (
+                  <article
                     key={leadKey(lead, index)}
-                    className="border-t border-zinc-800 transition hover:bg-zinc-900/50"
+                    className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4"
                   >
-                    <td className="px-4 py-4 text-center font-semibold text-zinc-400">
-                      {index + 1}
-                    </td>
-
-                    <td className="px-4 py-4">
-                      <div className="font-medium">{lead.name}</div>
-
-                      <div className="mt-1 text-sm text-zinc-400">
-                        {lead.address}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-semibold text-zinc-500">
+                          #{index + 1}
+                        </div>
+                        <h3 className="mt-1 font-semibold leading-snug">
+                          {lead.name}
+                        </h3>
+                        <p className="mt-1 text-sm text-zinc-400">
+                          {lead.address}
+                        </p>
+                        {(lead.reviews ?? 0) > 0 && (
+                          <p className="mt-1 text-xs text-zinc-500">
+                            {lead.reviews} recenzija
+                            {lead.rating != null ? ` · ${lead.rating}` : ""}
+                          </p>
+                        )}
                       </div>
 
-                      {(lead.reviews ?? 0) > 0 && (
-                        <div className="mt-1 text-xs text-zinc-500">
-                          {lead.reviews} recenzija
-                          {lead.rating != null ? ` · ${lead.rating}` : ""}
-                        </div>
-                      )}
-                    </td>
-
-                    <td className="px-4 py-4">
-                      <input
-                        value={lead.owner}
-                        onChange={(e) =>
-                          updateLead(index, "owner", e.target.value)
-                        }
-                        placeholder="Ime vlasnika"
-                        className="w-32 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
-                      />
-                    </td>
-
-                    <td className="px-4 py-4">
-                      <input
-                        value={lead.email}
-                        onChange={(e) =>
-                          updateLead(index, "email", e.target.value)
-                        }
-                        placeholder="Email"
-                        className="w-full min-w-[190px] rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
-                      />
-                    </td>
-
-                    <td className="px-4 py-4 text-center">
                       <a
                         href={lead.googleMapsUrl}
                         target="_blank"
-                        className="text-blue-400 underline"
+                        rel="noopener noreferrer"
+                        className="shrink-0 rounded-lg bg-zinc-800 px-3 py-2 text-xs text-blue-400"
                       >
-                        Otvori
+                        Maps
                       </a>
-                    </td>
+                    </div>
 
-                    <td className="px-4 py-4 text-center">
+                    <div className="mt-4 grid gap-3">
+                      <div>
+                        <label className="mb-1 block text-xs text-zinc-500">
+                          Vlasnik
+                        </label>
+                        <input
+                          value={lead.owner}
+                          onChange={(e) =>
+                            updateLead(index, "owner", e.target.value)
+                          }
+                          placeholder="Ime vlasnika"
+                          className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-zinc-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs text-zinc-500">
+                          Email
+                        </label>
+                        <input
+                          value={lead.email}
+                          onChange={(e) =>
+                            updateLead(index, "email", e.target.value)
+                          }
+                          placeholder="Email"
+                          type="email"
+                          className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-zinc-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
                       <button
                         onClick={() => openProposalPdf(lead)}
-                        className="rounded-lg bg-zinc-800 px-4 py-2 transition hover:bg-zinc-700"
+                        className="rounded-lg bg-zinc-800 px-4 py-2 text-sm font-medium transition hover:bg-zinc-700"
                       >
-                        PDF
+                        Proposal PDF
                       </button>
-                    </td>
 
-                    {(["first", "second", "third"] as const).map((field) => (
-                      <td
-                        key={field}
-                        className="border-l border-zinc-800 px-4 py-4 text-center"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={Boolean(lead.sentEmails?.[field])}
-                          onChange={() => toggleSentEmail(index, field)}
-                          className="h-5 w-5 cursor-pointer accent-green-500"
-                        />
+                      <div className="flex items-center gap-4 text-sm">
+                        <span className="text-xs text-zinc-500">Mejlovi:</span>
+                        {(["first", "second", "third"] as const).map(
+                          (field, mailIndex) => (
+                            <label
+                              key={field}
+                              className="flex flex-col items-center gap-1"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={Boolean(lead.sentEmails?.[field])}
+                                onChange={() =>
+                                  toggleSentEmail(index, field)
+                                }
+                                className="h-5 w-5 cursor-pointer accent-green-500"
+                              />
+                              <span className="text-[10px] text-zinc-500">
+                                {mailIndex + 1}
+                                {formatShortDate(
+                                  lead.sentEmails?.[field] || null
+                                )
+                                  ? ` · ${formatShortDate(lead.sentEmails?.[field] || null)}`
+                                  : ""}
+                              </span>
+                            </label>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
 
-                        <div className="mt-1 min-h-[20px] text-sm text-zinc-300">
-                          {formatShortDate(lead.sentEmails?.[field] || null)}
-                        </div>
-                      </td>
-                    ))}
+            <div className="mt-8 hidden overflow-x-auto rounded-2xl border border-zinc-800 lg:block">
+              <table className="w-full min-w-[1100px] text-left">
+                <thead className="bg-zinc-900">
+                  <tr>
+                    <th className="px-4 py-4 text-center">RB</th>
+                    <th className="px-4 py-4">Firma</th>
+                    <th className="px-4 py-4">Vlasnik</th>
+                    <th className="px-4 py-4">Email</th>
+                    <th className="px-4 py-4 text-center">Google Maps</th>
+                    <th className="px-4 py-4 text-center">Proposal</th>
+                    <th className="px-4 py-4 text-center" colSpan={3}>
+                      poslati mejlovi
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+
+                <tbody>
+                  {leads.map((lead, index) => (
+                    <tr
+                      key={leadKey(lead, index)}
+                      className="border-t border-zinc-800 transition hover:bg-zinc-900/50"
+                    >
+                      <td className="px-4 py-4 text-center font-semibold text-zinc-400">
+                        {index + 1}
+                      </td>
+
+                      <td className="px-4 py-4">
+                        <div className="font-medium">{lead.name}</div>
+
+                        <div className="mt-1 text-sm text-zinc-400">
+                          {lead.address}
+                        </div>
+
+                        {(lead.reviews ?? 0) > 0 && (
+                          <div className="mt-1 text-xs text-zinc-500">
+                            {lead.reviews} recenzija
+                            {lead.rating != null ? ` · ${lead.rating}` : ""}
+                          </div>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-4">
+                        <input
+                          value={lead.owner}
+                          onChange={(e) =>
+                            updateLead(index, "owner", e.target.value)
+                          }
+                          placeholder="Ime vlasnika"
+                          className="w-full min-w-[140px] rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-zinc-500"
+                        />
+                      </td>
+
+                      <td className="px-4 py-4">
+                        <input
+                          value={lead.email}
+                          onChange={(e) =>
+                            updateLead(index, "email", e.target.value)
+                          }
+                          placeholder="Email"
+                          className="w-full min-w-[190px] rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-zinc-500"
+                        />
+                      </td>
+
+                      <td className="px-4 py-4 text-center">
+                        <a
+                          href={lead.googleMapsUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-400 underline"
+                        >
+                          Otvori
+                        </a>
+                      </td>
+
+                      <td className="px-4 py-4 text-center">
+                        <button
+                          onClick={() => openProposalPdf(lead)}
+                          className="rounded-lg bg-zinc-800 px-4 py-2 transition hover:bg-zinc-700"
+                        >
+                          PDF
+                        </button>
+                      </td>
+
+                      {(["first", "second", "third"] as const).map((field) => (
+                        <td
+                          key={field}
+                          className="border-l border-zinc-800 px-4 py-4 text-center"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={Boolean(lead.sentEmails?.[field])}
+                            onChange={() => toggleSentEmail(index, field)}
+                            className="h-5 w-5 cursor-pointer accent-green-500"
+                          />
+
+                          <div className="mt-1 min-h-[20px] text-sm text-zinc-300">
+                            {formatShortDate(lead.sentEmails?.[field] || null)}
+                          </div>
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
 
         {shareModalOpen && shareTarget && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
-            <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center sm:p-6">
+            <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-5 shadow-xl sm:p-6">
               <h3 className="text-xl font-bold">Podeli pretragu</h3>
 
               <p className="mt-3 text-zinc-300">
@@ -1594,8 +1710,8 @@ export default function Home() {
         )}
 
         {deleteModalOpen && selectedHistory && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
-            <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center sm:p-6">
+            <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-5 shadow-xl sm:p-6">
               <h3 className="text-xl font-bold">Brisanje pretrage</h3>
 
               <p className="mt-3 text-zinc-300">
@@ -1630,8 +1746,8 @@ export default function Home() {
         )}
 
         {cropModalOpen && selectedAvatarImage && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6">
-            <div className="w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 p-4 sm:items-center sm:p-6">
+            <div className="max-h-[95vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-900 p-5 shadow-xl sm:p-6">
               <h3 className="text-xl font-bold">Podesi sliku</h3>
 
               <p className="mt-2 text-sm text-zinc-400">
