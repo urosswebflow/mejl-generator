@@ -12,6 +12,7 @@ import {
   runTextSearchQueries,
   type PlaceResult,
 } from "@/lib/places-search";
+import { buildGoogleMapsUrl } from "@/lib/google-maps-url";
 import { normalizeText } from "@/lib/text-normalize";
 
 export async function GET(request: NextRequest) {
@@ -107,7 +108,13 @@ export async function GET(request: NextRequest) {
       placeId: place.place_id || "",
       name: place.name,
       address,
-      googleMapsUrl: `https://www.google.com/maps/place/?q=place_id:${place.place_id}`,
+      googleMapsUrl: buildGoogleMapsUrl({
+        placeId: place.place_id,
+        name: place.name,
+        address,
+        lat: place.geometry?.location?.lat,
+        lng: place.geometry?.location?.lng,
+      }),
       email: "",
       owner: "",
       reviews: place.user_ratings_total || 0,

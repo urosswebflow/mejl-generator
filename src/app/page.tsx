@@ -3,6 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import Cropper from "react-easy-crop";
 import { Share2 } from "lucide-react";
+import {
+  resolveGoogleMapsUrl,
+  resolvePlaceId,
+} from "@/lib/google-maps-url";
 import { supabase } from "@/lib/supabase";
 import { isValidLeadLimitInput } from "@/lib/limits";
 import type { User } from "@supabase/supabase-js";
@@ -122,9 +126,18 @@ function makeTitle(profession: string, city: string) {
 }
 
 function normalizeLead(lead: Lead): Lead {
+  const placeId = resolvePlaceId(lead.placeId, lead.googleMapsUrl);
+  const googleMapsUrl = resolveGoogleMapsUrl(
+    lead.googleMapsUrl,
+    placeId,
+    lead.name,
+    lead.address
+  );
+
   return {
     ...lead,
-    placeId: lead.placeId || "",
+    placeId,
+    googleMapsUrl,
     owner: lead.owner || "",
     email: lead.email || "",
     sentEmails: {
@@ -1471,7 +1484,6 @@ export default function Home() {
 
                       <a
                         href={lead.googleMapsUrl}
-                        target="_blank"
                         rel="noopener noreferrer"
                         className="shrink-0 rounded-lg bg-zinc-800 px-3 py-2 text-xs text-blue-400"
                       >
@@ -1618,7 +1630,6 @@ export default function Home() {
                       <td className="px-4 py-4 text-center">
                         <a
                           href={lead.googleMapsUrl}
-                          target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-400 underline"
                         >
