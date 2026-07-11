@@ -6,6 +6,23 @@ type GoogleMapsUrlInput = {
   lng?: number;
 };
 
+function buildSearchUrl(query: string, placeId?: string): string {
+  const params = new URLSearchParams({
+    api: "1",
+    query,
+  });
+
+  if (placeId) {
+    params.set("query_place_id", placeId);
+  }
+
+  return `https://www.google.com/maps/search/?${params.toString()}`;
+}
+
+function nameAddressQuery(name?: string, address?: string): string {
+  return [name, address].filter(Boolean).join(", ").trim();
+}
+
 export function extractPlaceIdFromLegacyUrl(url: string): string {
   const legacy = url.match(/place_id:([^&?#]+)/i);
   if (legacy?.[1]) {
@@ -31,27 +48,28 @@ export function resolvePlaceId(placeId?: string, storedUrl?: string): string {
 /** Službeni Google Maps URL format — radi na desktopu i u mobilnoj aplikaciji. */
 export function buildGoogleMapsUrl(input: GoogleMapsUrlInput): string {
   const placeId = input.placeId?.trim();
-
-  if (placeId) {
-    return `https://www.google.com/maps/search/?api=1&query_place_id=${encodeURIComponent(placeId)}`;
-  }
+  const textQuery = nameAddressQuery(input.name, input.address);
 
   const lat = input.lat;
   const lng = input.lng;
-
-  if (
+  const hasCoords =
     lat != null &&
     lng != null &&
     Number.isFinite(lat) &&
-    Number.isFinite(lng)
-  ) {
-    return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+    Number.isFinite(lng);
+  const coordsQuery = hasCoords ? `${lat},${lng}` : "";
+
+  if (placeId) {
+    const query = textQuery || coordsQuery || " ";
+    return buildSearchUrl(query, placeId);
   }
 
-  const query = [input.name, input.address].filter(Boolean).join(", ").trim();
+  if (hasCoords) {
+    return buildSearchUrl(coordsQuery);
+  }
 
-  if (query) {
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+  if (textQuery) {
+    return buildSearchUrl(textQuery);
   }
 
   return "https://www.google.com/maps";
@@ -70,7 +88,17 @@ export function resolveGoogleMapsUrl(
   }
 
   if (storedUrl.includes("api=1")) {
-    return storedUrl;
+    try {
+      const url = new URL(storedUrl);
+      const hasQuery = url.searchParams.has("query");
+      const hasPlaceId = url.searchParams.has("query_place_id");
+
+      if (hasQuery || !hasPlaceId) {
+        return storedUrl;
+      }
+    } catch {
+      // Nastavi sa rekonstrukcijom URL-a.
+    }
   }
 
   return buildGoogleMapsUrl({ name, address });
