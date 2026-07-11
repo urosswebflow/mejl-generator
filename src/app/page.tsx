@@ -7,7 +7,11 @@ import {
   resolveGoogleMapsUrl,
   resolvePlaceId,
 } from "@/lib/google-maps-url";
-import { supabase } from "@/lib/supabase";
+import {
+  getRememberMePreference,
+  setRememberMePreference,
+  supabase,
+} from "@/lib/supabase";
 import { isValidLeadLimitInput } from "@/lib/limits";
 import type { User } from "@supabase/supabase-js";
 
@@ -233,6 +237,8 @@ export default function Home() {
   const [authPassword, setAuthPassword] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [authButtonLoading, setAuthButtonLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(false);
@@ -309,6 +315,10 @@ export default function Home() {
   const unreadCount = sharedNotifications.filter(
     (item) => !item.opened_at
   ).length;
+
+  useEffect(() => {
+    setRememberMe(getRememberMePreference());
+  }, []);
 
   useEffect(() => {
     async function refreshSession() {
@@ -401,6 +411,8 @@ export default function Home() {
       setAuthMessage("");
 
       if (isLogin) {
+        setRememberMePreference(rememberMe);
+
         const { error } = await withTimeout(
           supabase.auth.signInWithPassword({
             email: authEmail,
@@ -429,6 +441,37 @@ export default function Home() {
           "Proverite email i kliknite na verify link za potvrdu naloga."
         );
       }
+    } catch (error) {
+      setAuthMessage(requestErrorMessage(error));
+    } finally {
+      setAuthButtonLoading(false);
+    }
+  }
+
+  async function handleForgotPassword() {
+    if (!authEmail.trim()) {
+      setAuthMessage("Unesite email adresu.");
+      return;
+    }
+
+    try {
+      setAuthButtonLoading(true);
+      setAuthMessage("");
+
+      const { error } = await withTimeout(
+        supabase.auth.resetPasswordForEmail(authEmail.trim(), {
+          redirectTo: `${window.location.origin}/auth/reset-password`,
+        })
+      );
+
+      if (error) {
+        setAuthMessage(error.message);
+        return;
+      }
+
+      setAuthMessage(
+        "Link za promenu lozinke je poslat na vaš email. Proverite inbox i spam folder."
+      );
     } catch (error) {
       setAuthMessage(requestErrorMessage(error));
     } finally {
@@ -1096,7 +1139,11 @@ export default function Home() {
           </h1>
 
           <p className="text-gray-400 text-center mb-8">
-            {isLogin ? "Prijava na nalog" : "Kreiranje naloga"}
+            {showForgotPassword
+              ? "Promena zaboravljene lozinke"
+              : isLogin
+              ? "Prijava na nalog"
+              : "Kreiranje naloga"}
           </p>
 
           <div className="space-y-4">
@@ -1108,21 +1155,50 @@ export default function Home() {
               className="w-full bg-[#11141a] border border-[#2a2f3a] rounded-xl px-4 py-3 text-white outline-none"
             />
 
-            <input
-              type="password"
-              placeholder="Lozinka"
-              value={authPassword}
-              onChange={(e) => setAuthPassword(e.target.value)}
-              className="w-full bg-[#11141a] border border-[#2a2f3a] rounded-xl px-4 py-3 text-white outline-none"
-            />
+            {!showForgotPassword && (
+              <input
+                type="password"
+                placeholder="Lozinka"
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                className="w-full bg-[#11141a] border border-[#2a2f3a] rounded-xl px-4 py-3 text-white outline-none"
+              />
+            )}
+
+            {isLogin && !showForgotPassword && (
+              <div className="flex items-center justify-between gap-3">
+                <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="h-4 w-4 rounded border-[#2a2f3a] bg-[#11141a] accent-green-600"
+                  />
+                  Zapamti me
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowForgotPassword(true);
+                    setAuthMessage("");
+                  }}
+                  className="text-sm text-gray-400 hover:text-white transition"
+                >
+                  Zaboravili ste lozinku?
+                </button>
+              </div>
+            )}
 
             <button
-              onClick={handleAuth}
+              onClick={showForgotPassword ? handleForgotPassword : handleAuth}
               disabled={authButtonLoading}
               className="w-full bg-green-600 hover:bg-green-700 transition rounded-xl py-3 text-white font-semibold"
             >
               {authButtonLoading
                 ? "Molimo sačekajte..."
+                : showForgotPassword
+                ? "Pošalji link za promenu"
                 : isLogin
                 ? "Login"
                 : "Register"}
@@ -1135,17 +1211,29 @@ export default function Home() {
             </div>
           )}
 
-          <button
-            onClick={() => {
-              setIsLogin(!isLogin);
-              setAuthMessage("");
-            }}
-            className="mt-6 w-full text-sm text-gray-400 hover:text-white transition"
-          >
-            {isLogin
-              ? "Nemate nalog? Registrujte se"
-              : "Već imate nalog? Login"}
-          </button>
+          {showForgotPassword ? (
+            <button
+              onClick={() => {
+                setShowForgotPassword(false);
+                setAuthMessage("");
+              }}
+              className="mt-6 w-full text-sm text-gray-400 hover:text-white transition"
+            >
+              Nazad na prijavu
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                setIsLogin(!isLogin);
+                setAuthMessage("");
+              }}
+              className="mt-6 w-full text-sm text-gray-400 hover:text-white transition"
+            >
+              {isLogin
+                ? "Nemate nalog? Registrujte se"
+                : "Već imate nalog? Login"}
+            </button>
+          )}
         </div>
       </main>
     );

@@ -1,0 +1,10 @@
+# Jedinstveni LF u repou — bez CRLF upozorenja na Windows-u
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
