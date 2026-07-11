@@ -245,7 +245,7 @@ export default function Home() {
 
   const [profession, setProfession] = useState("");
   const [city, setCity] = useState("");
-  const [limit, setLimit] = useState("10");
+  const [limit, setLimit] = useState("");
   const [searchError, setSearchError] = useState("");
 
   const [view, setView] = useState<"results" | "history">("results");
@@ -495,6 +495,10 @@ export default function Home() {
       setSharedNotifications([]);
       setView("results");
       setActiveHistoryId(null);
+      setProfession("");
+      setCity("");
+      setLimit("");
+      setSearchError("");
     }
   }
 
@@ -580,6 +584,9 @@ export default function Home() {
 
       const newHistoryId = await saveSearchHistory(foundLeads);
       setActiveHistoryId(newHistoryId);
+      setProfession("");
+      setCity("");
+      setLimit("");
     } catch (error) {
       const message = requestErrorMessage(error);
       setSearchError(message);
@@ -711,16 +718,12 @@ export default function Home() {
   function openHistoryItem(item: SearchHistory) {
     const normalizedLeads = (item.leads || []).map(normalizeLead);
 
-    setProfession(item.profession || "");
-    setCity(item.city || "");
     setLeads(normalizedLeads);
     setActiveHistoryId(item.id);
     setView("results");
   }
 
   async function openSharedItem(item: SharedNotification) {
-    setProfession(item.profession || "");
-    setCity(item.city || "");
     setLeads((item.leads || []).map(normalizeLead));
     setActiveHistoryId(item.search_id);
     setView("results");
@@ -1441,6 +1444,7 @@ export default function Home() {
             <input
               value={profession}
               onChange={(e) => setProfession(e.target.value)}
+              autoComplete="off"
               className="rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3"
               placeholder="Delatnost"
             />
@@ -1448,6 +1452,7 @@ export default function Home() {
             <input
               value={city}
               onChange={(e) => setCity(e.target.value)}
+              autoComplete="off"
               className="rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3"
               placeholder="Grad"
             />
@@ -1455,6 +1460,7 @@ export default function Home() {
             <input
               value={limit}
               onChange={(e) => setLimit(e.target.value)}
+              autoComplete="off"
               className="rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3"
               placeholder="Broj firmi"
               type="number"
