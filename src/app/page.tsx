@@ -1578,6 +1578,7 @@ export default function Home() {
 
                       <a
                         href={lead.googleMapsUrl}
+                        target="_blank"
                         rel="noopener noreferrer"
                         className="shrink-0 rounded-lg bg-zinc-800 px-3 py-2 text-xs text-blue-400"
                       >
@@ -1724,6 +1725,7 @@ export default function Home() {
                       <td className="px-4 py-4 text-center">
                         <a
                           href={lead.googleMapsUrl}
+                          target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-400 underline"
                         >
