@@ -1,6 +1,13 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { User } from "@supabase/supabase-js";
 import { NextRequest } from "next/server";
+
+function getBearerToken(request: NextRequest) {
+  const authHeader = request.headers.get("authorization");
+  return authHeader?.startsWith("Bearer ")
+    ? authHeader.slice(7).trim()
+    : null;
+}
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -13,6 +20,26 @@ function getSupabaseAdmin() {
   return createClient(url, anonKey);
 }
 
+export function getAuthedSupabaseClient(
+  request: NextRequest
+): SupabaseClient | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const token = getBearerToken(request);
+
+  if (!url || !anonKey || !token) {
+    return null;
+  }
+
+  return createClient(url, anonKey, {
+    global: {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  });
+}
+
 export async function getUserFromRequest(
   request: NextRequest
 ): Promise<{ user: User | null; error: string | null }> {
@@ -22,10 +49,7 @@ export async function getUserFromRequest(
     return { user: null, error: "Supabase nije konfigurisan." };
   }
 
-  const authHeader = request.headers.get("authorization");
-  const token = authHeader?.startsWith("Bearer ")
-    ? authHeader.slice(7).trim()
-    : null;
+  const token = getBearerToken(request);
 
   if (!token) {
     return { user: null, error: "Niste prijavljeni." };

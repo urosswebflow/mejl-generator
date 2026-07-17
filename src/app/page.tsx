@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import Cropper from "react-easy-crop";
 import { Share2 } from "lucide-react";
@@ -18,7 +19,16 @@ import {
   parseWebsiteFilter,
   type WebsiteFilter,
 } from "@/lib/search-filters";
+import { markNextSentEmail } from "@/lib/sent-emails";
 import type { User } from "@supabase/supabase-js";
+
+const SELECTED_SENDER_KEY = "selectedSenderEmailId";
+
+type SenderEmail = {
+  id: string;
+  email: string;
+  created_at: string;
+};
 
 type SentEmails = {
   first: string | null;
@@ -51,6 +61,7 @@ type SearchHistory = {
   reviews_max?: number | null;
   proposal_example_text?: string | null;
   proposal_example_filename?: string | null;
+  extract_email?: boolean;
 };
 
 type SharedSearchRow = {
@@ -86,6 +97,7 @@ type SharedNotification = {
   reviews_max?: number | null;
   proposal_example_text?: string | null;
   proposal_example_filename?: string | null;
+  extract_email?: boolean;
 };
 
 function escapeHtml(text: string) {
@@ -286,11 +298,24 @@ export default function Home() {
   const [proposalExampleFilename, setProposalExampleFilename] = useState("");
   const [proposalUploadLoading, setProposalUploadLoading] = useState(false);
   const [proposalUploadError, setProposalUploadError] = useState("");
+  const [extractEmail, setExtractEmail] = useState(false);
 
   const [activeProfession, setActiveProfession] = useState("");
   const [activeCity, setActiveCity] = useState("");
   const [activeProposalExampleText, setActiveProposalExampleText] =
     useState("");
+
+  const [senderEmails, setSenderEmails] = useState<SenderEmail[]>([]);
+  const [selectedSenderEmailId, setSelectedSenderEmailId] = useState("");
+  const [sendModalOpen, setSendModalOpen] = useState(false);
+  const [sendModalLeadIndex, setSendModalLeadIndex] = useState<number | null>(
+    null
+  );
+  const [sendModalPreview, setSendModalPreview] = useState("");
+  const [sendModalSubject, setSendModalSubject] = useState("");
+  const [sendModalLoading, setSendModalLoading] = useState(false);
+  const [sendModalSending, setSendModalSending] = useState(false);
+  const [sendModalError, setSendModalError] = useState("");
 
   const [view, setView] = useState<"results" | "history">("results");
   const [history, setHistory] = useState<SearchHistory[]>([]);
@@ -424,6 +449,16 @@ export default function Home() {
       revokeAvatarObjectUrl();
     };
   }, [bellOpen]);
+
+  useEffect(() => {
+    if (!user) {
+      setSenderEmails([]);
+      setSelectedSenderEmailId("");
+      return;
+    }
+
+    void loadSenderEmails();
+  }, [user?.id]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -575,6 +610,7 @@ export default function Home() {
       reviewsMax: string;
       proposalExampleText: string;
       proposalExampleFilename: string;
+      extractEmail: boolean;
     }
   ) {
     if (!user) return null;
@@ -607,6 +643,7 @@ export default function Home() {
               : null,
             proposal_example_text: context.proposalExampleText || null,
             proposal_example_filename: context.proposalExampleFilename || null,
+            extract_email: context.extractEmail,
           })
           .select("id")
           .single()
@@ -641,6 +678,7 @@ export default function Home() {
     );
     setProposalExampleText(item.proposal_example_text || "");
     setProposalExampleFilename(item.proposal_example_filename || "");
+    setExtractEmail(Boolean(item.extract_email));
     setProposalUploadError("");
   }
 
@@ -699,6 +737,7 @@ export default function Home() {
       reviewsMax,
       proposalExampleText,
       proposalExampleFilename,
+      extractEmail,
     };
 
     try {
@@ -715,6 +754,10 @@ export default function Home() {
 
       if (reviewsMax.trim()) {
         params.set("reviewsMax", reviewsMax.trim());
+      }
+
+      if (extractEmail) {
+        params.set("extractEmail", "true");
       }
 
       const response = await authFetch(`/api/places?${params.toString()}`);
@@ -858,6 +901,7 @@ export default function Home() {
             reviews_max: search.reviews_max,
             proposal_example_text: search.proposal_example_text,
             proposal_example_filename: search.proposal_example_filename,
+            extract_email: search.extract_email,
           };
         })
         .filter(Boolean) as SharedNotification[];
@@ -901,6 +945,7 @@ export default function Home() {
     );
     setProposalExampleText(item.proposal_example_text || "");
     setProposalExampleFilename(item.proposal_example_filename || "");
+    setExtractEmail(Boolean(item.extract_email));
     setProposalUploadError("");
     setFiltersOpen(true);
     setView("results");
@@ -1061,6 +1106,170 @@ export default function Home() {
 
     setLeads(updated);
     queueSaveLeads(updated);
+  }
+
+  async function loadSenderEmails() {
+    try {
+      const response = await authFetch("/api/sender-emails");
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error("Greška pri učitavanju sender mejlova:", data.error);
+        setSenderEmails([]);
+        return;
+      }
+
+      const loaded = (data.emails || []) as SenderEmail[];
+      setSenderEmails(loaded);
+
+      const savedId = localStorage.getItem(SELECTED_SENDER_KEY);
+      const savedExists = savedId
+        ? loaded.some((item) => item.id === savedId)
+        : false;
+
+      if (savedExists && savedId) {
+        setSelectedSenderEmailId(savedId);
+      } else if (loaded.length > 0) {
+        setSelectedSenderEmailId(loaded[0].id);
+        localStorage.setItem(SELECTED_SENDER_KEY, loaded[0].id);
+      } else {
+        setSelectedSenderEmailId("");
+        localStorage.removeItem(SELECTED_SENDER_KEY);
+      }
+    } catch (error) {
+      console.error(
+        "Greška pri učitavanju sender mejlova:",
+        requestErrorMessage(error)
+      );
+      setSenderEmails([]);
+    }
+  }
+
+  function handleSenderChange(senderId: string) {
+    setSelectedSenderEmailId(senderId);
+    localStorage.setItem(SELECTED_SENDER_KEY, senderId);
+  }
+
+  function isValidRecipientEmail(email: string) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  }
+
+  function canSendToLead(lead: Lead) {
+    return (
+      senderEmails.length > 0 &&
+      Boolean(selectedSenderEmailId) &&
+      isValidRecipientEmail(lead.email)
+    );
+  }
+
+  function closeSendModal() {
+    setSendModalOpen(false);
+    setSendModalLeadIndex(null);
+    setSendModalPreview("");
+    setSendModalSubject("");
+    setSendModalError("");
+    setSendModalLoading(false);
+    setSendModalSending(false);
+  }
+
+  async function openSendModal(lead: Lead, index: number) {
+    if (!canSendToLead(lead)) {
+      return;
+    }
+
+    setSendModalOpen(true);
+    setSendModalLeadIndex(index);
+    setSendModalPreview("");
+    setSendModalSubject("");
+    setSendModalError("");
+    setSendModalLoading(true);
+    setSendModalSending(false);
+
+    try {
+      const response = await authFetch("/api/generate-proposal", {
+        method: "POST",
+        body: JSON.stringify({
+          companyName: lead.name,
+          profession: activeProfession,
+          city: activeCity,
+          address: lead.address,
+          owner: lead.owner,
+          email: lead.email,
+          proposalExampleText: activeProposalExampleText,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Greška pri generisanju preview-a.");
+      }
+
+      setSendModalPreview(data.proposal || "");
+      setSendModalSubject(
+        data.subject || `Predlog saradnje — ${lead.name.trim() || "Vaš biznis"}`
+      );
+    } catch (error) {
+      setSendModalError(requestErrorMessage(error));
+    } finally {
+      setSendModalLoading(false);
+    }
+  }
+
+  async function confirmSendEmail() {
+    if (sendModalLeadIndex === null) {
+      return;
+    }
+
+    const lead = leads[sendModalLeadIndex];
+
+    if (!lead || !canSendToLead(lead) || !sendModalPreview.trim()) {
+      return;
+    }
+
+    setSendModalSending(true);
+    setSendModalError("");
+
+    try {
+      const response = await authFetch("/api/send-proposal-email", {
+        method: "POST",
+        body: JSON.stringify({
+          senderEmailId: selectedSenderEmailId,
+          recipientEmail: lead.email.trim(),
+          companyName: lead.name,
+          profession: activeProfession,
+          city: activeCity,
+          address: lead.address,
+          owner: lead.owner,
+          proposalExampleText: activeProposalExampleText,
+          proposalText: sendModalPreview,
+          subject: sendModalSubject,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Greška pri slanju mejla.");
+      }
+
+      const updated = leads.map((item, index) =>
+        index === sendModalLeadIndex
+          ? {
+              ...item,
+              sentEmails: markNextSentEmail(item.sentEmails),
+            }
+          : item
+      );
+
+      setLeads(updated);
+      queueSaveLeads(updated);
+      closeSendModal();
+    } catch (error) {
+      setSendModalError(requestErrorMessage(error));
+    } finally {
+      setSendModalSending(false);
+    }
   }
 
   function handleAvatarFile(file: File) {
@@ -1547,6 +1756,14 @@ export default function Home() {
 
                     <p className="mt-4 text-sm text-zinc-300">{user.email}</p>
 
+                    <Link
+                      href="/settings"
+                      onClick={() => setProfileOpen(false)}
+                      className="mt-4 inline-flex rounded-xl bg-zinc-800 px-4 py-2 text-sm font-semibold transition hover:bg-zinc-700"
+                    >
+                      Mejlovi za slanje
+                    </Link>
+
                     <label className="mt-4 cursor-pointer rounded-xl bg-zinc-800 px-4 py-2 text-sm font-semibold transition hover:bg-zinc-700">
                       Promeni sliku
                       <input
@@ -1708,41 +1925,62 @@ export default function Home() {
               </label>
 
               <div className="sm:col-span-2 lg:col-span-3">
-                <span className="mb-1 block text-sm text-zinc-400">
-                  Primer propozala (PDF ili DOCX)
-                </span>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <input
-                    type="file"
-                    accept={PROPOSAL_UPLOAD_ACCEPT}
-                    onChange={handleProposalFileChange}
-                    disabled={proposalUploadLoading}
-                    className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-700 file:px-3 file:py-1 file:text-sm file:text-white"
-                  />
-                  {proposalExampleFilename && (
-                    <button
-                      type="button"
-                      onClick={clearProposalUpload}
-                      className="shrink-0 rounded-xl bg-zinc-800 px-4 py-3 text-sm font-semibold transition hover:bg-zinc-700"
-                    >
-                      Ukloni
-                    </button>
-                  )}
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+                  <div className="flex-1">
+                    <span className="mb-1 block text-sm text-zinc-400">
+                      Primer propozala (PDF ili DOCX)
+                    </span>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <input
+                        type="file"
+                        accept={PROPOSAL_UPLOAD_ACCEPT}
+                        onChange={handleProposalFileChange}
+                        disabled={proposalUploadLoading}
+                        className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-700 file:px-3 file:py-1 file:text-sm file:text-white"
+                      />
+                      {proposalExampleFilename && (
+                        <button
+                          type="button"
+                          onClick={clearProposalUpload}
+                          className="shrink-0 rounded-xl bg-zinc-800 px-4 py-3 text-sm font-semibold transition hover:bg-zinc-700"
+                        >
+                          Ukloni
+                        </button>
+                      )}
+                    </div>
+                    {proposalUploadLoading && (
+                      <p className="mt-2 text-sm text-zinc-400">
+                        Učitavam fajl...
+                      </p>
+                    )}
+                    {proposalExampleFilename && !proposalUploadLoading && (
+                      <p className="mt-2 text-sm text-emerald-400">
+                        Učitan fajl: {proposalExampleFilename}
+                      </p>
+                    )}
+                    {proposalUploadError && (
+                      <p className="mt-2 text-sm text-red-400">
+                        {proposalUploadError}
+                      </p>
+                    )}
+                    <p className="mt-2 text-xs text-zinc-500">
+                      Ako ne uploaduješ fajl, propozal se generiše automatski
+                      kao do sada.
+                    </p>
+                  </div>
+
+                  <label className="flex shrink-0 cursor-pointer items-center gap-3 self-start rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 lg:mt-6">
+                    <input
+                      type="checkbox"
+                      checked={extractEmail}
+                      onChange={(e) => setExtractEmail(e.target.checked)}
+                      className="h-4 w-4 rounded border-zinc-600 bg-zinc-950"
+                    />
+                    <span className="text-sm font-medium text-zinc-200">
+                      Email
+                    </span>
+                  </label>
                 </div>
-                {proposalUploadLoading && (
-                  <p className="mt-2 text-sm text-zinc-400">Učitavam fajl...</p>
-                )}
-                {proposalExampleFilename && !proposalUploadLoading && (
-                  <p className="mt-2 text-sm text-emerald-400">
-                    Učitan fajl: {proposalExampleFilename}
-                  </p>
-                )}
-                {proposalUploadError && (
-                  <p className="mt-2 text-sm text-red-400">{proposalUploadError}</p>
-                )}
-                <p className="mt-2 text-xs text-zinc-500">
-                  Ako ne uploaduješ fajl, propozal se generiše automatski kao do sada.
-                </p>
               </div>
             </div>
           )}
@@ -1825,6 +2063,41 @@ export default function Home() {
           </div>
         ) : (
           <>
+            {leads.length > 0 && (
+              <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 sm:flex-row sm:items-end sm:justify-between">
+                <label className="block min-w-0 flex-1">
+                  <span className="mb-1 block text-sm text-zinc-400">
+                    Pošalji sa mejla
+                  </span>
+                  {senderEmails.length === 0 ? (
+                    <p className="text-sm text-amber-400">
+                      Nema dodatih mejlova.{" "}
+                      <Link href="/settings" className="underline">
+                        Dodaj u settings
+                      </Link>
+                    </p>
+                  ) : (
+                    <select
+                      value={selectedSenderEmailId}
+                      onChange={(e) => handleSenderChange(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3"
+                    >
+                      {senderEmails.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.email}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </label>
+
+                <p className="text-xs text-zinc-500 sm:max-w-xs">
+                  Izaberi verifikovani Resend mejl, zatim klikni SEND pored
+                  leada. Preview se prikazuje pre slanja.
+                </p>
+              </div>
+            )}
+
             <div className="mt-6 space-y-4 lg:hidden">
               {leads.length === 0 ? (
                 <p className="rounded-2xl border border-zinc-800 bg-zinc-900/50 px-4 py-8 text-center text-sm text-zinc-400">
@@ -1904,6 +2177,21 @@ export default function Home() {
                         Proposal PDF
                       </button>
 
+                      <button
+                        onClick={() => openSendModal(lead, index)}
+                        disabled={!canSendToLead(lead)}
+                        title={
+                          !senderEmails.length
+                            ? "Dodaj sender mejl u settings"
+                            : !isValidRecipientEmail(lead.email)
+                              ? "Unesite ispravan email primaoca"
+                              : "Pošalji propozal"
+                        }
+                        className="rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold transition hover:bg-green-600 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
+                      >
+                        SEND
+                      </button>
+
                       <div className="flex items-center gap-4 text-sm">
                         <span className="text-xs text-zinc-500">Mejlovi:</span>
                         {(["first", "second", "third"] as const).map(
@@ -1939,7 +2227,7 @@ export default function Home() {
             </div>
 
             <div className="mt-8 hidden overflow-x-auto rounded-2xl border border-zinc-800 lg:block">
-              <table className="w-full min-w-[1100px] text-left">
+              <table className="w-full min-w-[1180px] text-left">
                 <thead className="bg-zinc-900">
                   <tr>
                     <th className="px-4 py-4 text-center">RB</th>
@@ -1948,6 +2236,7 @@ export default function Home() {
                     <th className="px-4 py-4">Email</th>
                     <th className="px-4 py-4 text-center">Google Maps</th>
                     <th className="px-4 py-4 text-center">Proposal</th>
+                    <th className="px-4 py-4 text-center">Send</th>
                     <th className="px-4 py-4 text-center" colSpan={3}>
                       poslati mejlovi
                     </th>
@@ -2021,6 +2310,23 @@ export default function Home() {
                         </button>
                       </td>
 
+                      <td className="px-4 py-4 text-center">
+                        <button
+                          onClick={() => openSendModal(lead, index)}
+                          disabled={!canSendToLead(lead)}
+                          title={
+                            !senderEmails.length
+                              ? "Dodaj sender mejl u settings"
+                              : !isValidRecipientEmail(lead.email)
+                                ? "Unesite ispravan email primaoca"
+                                : "Pošalji propozal"
+                          }
+                          className="rounded-lg bg-green-700 px-4 py-2 font-semibold transition hover:bg-green-600 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
+                        >
+                          SEND
+                        </button>
+                      </td>
+
                       {(["first", "second", "third"] as const).map((field) => (
                         <td
                           key={field}
@@ -2044,6 +2350,77 @@ export default function Home() {
               </table>
             </div>
           </>
+        )}
+
+        {sendModalOpen && sendModalLeadIndex !== null && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center sm:p-6">
+            <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl border border-zinc-800 bg-zinc-900 shadow-xl">
+              <div className="border-b border-zinc-800 p-5 sm:p-6">
+                <h3 className="text-xl font-bold">Preview i slanje mejla</h3>
+                <p className="mt-2 text-sm text-zinc-400">
+                  Za: {leads[sendModalLeadIndex]?.email || "—"}
+                </p>
+                <p className="mt-1 text-sm text-zinc-400">
+                  Sa:{" "}
+                  {senderEmails.find((item) => item.id === selectedSenderEmailId)
+                    ?.email || "—"}
+                </p>
+              </div>
+
+              <div className="overflow-y-auto p-5 sm:p-6">
+                {sendModalLoading ? (
+                  <p className="text-zinc-400">Generišem preview...</p>
+                ) : sendModalError && !sendModalPreview ? (
+                  <p className="text-red-400">{sendModalError}</p>
+                ) : (
+                  <>
+                    <div className="mb-4">
+                      <span className="mb-1 block text-xs uppercase tracking-wide text-zinc-500">
+                        Subject
+                      </span>
+                      <p className="rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm">
+                        {sendModalSubject || "—"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <span className="mb-1 block text-xs uppercase tracking-wide text-zinc-500">
+                        Sadržaj
+                      </span>
+                      <pre className="max-h-[45vh] overflow-y-auto whitespace-pre-wrap rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-4 text-sm leading-relaxed">
+                        {sendModalPreview}
+                      </pre>
+                    </div>
+
+                    {sendModalError && (
+                      <p className="mt-4 text-sm text-red-400">{sendModalError}</p>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-3 border-t border-zinc-800 p-5 sm:p-6">
+                <button
+                  onClick={closeSendModal}
+                  className="rounded-xl bg-zinc-800 px-5 py-3 font-semibold transition hover:bg-zinc-700"
+                >
+                  Otkaži
+                </button>
+
+                <button
+                  onClick={confirmSendEmail}
+                  disabled={
+                    sendModalLoading ||
+                    sendModalSending ||
+                    !sendModalPreview.trim()
+                  }
+                  className="rounded-xl bg-green-700 px-5 py-3 font-semibold transition hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {sendModalSending ? "Slanje..." : "Send"}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {shareModalOpen && shareTarget && (

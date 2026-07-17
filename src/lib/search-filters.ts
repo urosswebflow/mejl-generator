@@ -4,7 +4,12 @@ export type SearchFilters = {
   websiteFilter: WebsiteFilter;
   reviewsMin: number | null;
   reviewsMax: number | null;
+  extractEmail: boolean;
 };
+
+export function parseExtractEmail(value: string | null | undefined) {
+  return value === "true" || value === "1";
+}
 
 export function parseWebsiteFilter(value: string | null | undefined): WebsiteFilter {
   if (value === "required" || value === "forbidden") {
@@ -54,6 +59,7 @@ export function parseSearchFilters(searchParams: {
   websiteFilter?: string | null;
   reviewsMin?: string | null;
   reviewsMax?: string | null;
+  extractEmail?: string | null;
 }): SearchFilters {
   const reviewsMin = parseReviewsBound(searchParams.reviewsMin ?? null);
   const reviewsMax = parseReviewsBound(searchParams.reviewsMax ?? null);
@@ -67,6 +73,7 @@ export function parseSearchFilters(searchParams: {
       websiteFilter: parseWebsiteFilter(searchParams.websiteFilter),
       reviewsMin: reviewsMax,
       reviewsMax: reviewsMin,
+      extractEmail: parseExtractEmail(searchParams.extractEmail),
     };
   }
 
@@ -74,5 +81,6 @@ export function parseSearchFilters(searchParams: {
     websiteFilter: parseWebsiteFilter(searchParams.websiteFilter),
     reviewsMin,
     reviewsMax,
+    extractEmail: parseExtractEmail(searchParams.extractEmail),
   };
 }

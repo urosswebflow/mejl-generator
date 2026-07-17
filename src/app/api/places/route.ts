@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserFromRequest } from "@/lib/api-auth";
+import { extractEmailFromWebsite } from "@/lib/extract-email-from-website";
 import { geocodeCity } from "@/lib/google-geocode";
 import { parseLeadLimit } from "@/lib/limits";
-import { placeHasWebsite, passesWebsiteFilter } from "@/lib/place-details";
+import {
+  fetchPlaceWebsite,
+  passesWebsiteFilter,
+} from "@/lib/place-details";
 import {
   buildSearchQueries,
   createPlacesCollector,
@@ -55,7 +59,7 @@ async function finalizeFilteredPlaces(
       continue;
     }
 
-    const hasWebsite = await placeHasWebsite(apiKey, place.place_id);
+    const { hasWebsite } = await fetchPlaceWebsite(apiKey, place.place_id);
 
     if (passesWebsiteFilter(hasWebsite, websiteFilter)) {
       matched.push(place);
@@ -63,6 +67,47 @@ async function finalizeFilteredPlaces(
   }
 
   return matched;
+}
+
+async function buildLeads(
+  apiKey: string,
+  filteredPlaces: PlaceResult[],
+  city: string,
+  extractEmail: boolean
+) {
+  const leads = [];
+
+  for (const place of filteredPlaces) {
+    const address = place.formatted_address || city;
+    let email = "";
+
+    if (extractEmail && place.place_id) {
+      const { websiteUrl } = await fetchPlaceWebsite(apiKey, place.place_id);
+
+      if (websiteUrl) {
+        email = (await extractEmailFromWebsite(websiteUrl)) || "";
+      }
+    }
+
+    leads.push({
+      placeId: place.place_id || "",
+      name: place.name,
+      address,
+      googleMapsUrl: buildGoogleMapsUrl({
+        placeId: place.place_id,
+        name: place.name,
+        address,
+        lat: place.geometry?.location?.lat,
+        lng: place.geometry?.location?.lng,
+      }),
+      email,
+      owner: "",
+      reviews: place.user_ratings_total || 0,
+      rating: place.rating || null,
+    });
+  }
+
+  return leads;
 }
 
 export async function GET(request: NextRequest) {
@@ -90,6 +135,7 @@ export async function GET(request: NextRequest) {
     websiteFilter: searchParams.get("websiteFilter"),
     reviewsMin: searchParams.get("reviewsMin"),
     reviewsMax: searchParams.get("reviewsMax"),
+    extractEmail: searchParams.get("extractEmail"),
   });
 
   if (!profession || !city) {
@@ -163,26 +209,12 @@ export async function GET(request: NextRequest) {
     filters.reviewsMax
   );
 
-  const leads = filteredPlaces.map((place) => {
-    const address = place.formatted_address || city;
-
-    return {
-      placeId: place.place_id || "",
-      name: place.name,
-      address,
-      googleMapsUrl: buildGoogleMapsUrl({
-        placeId: place.place_id,
-        name: place.name,
-        address,
-        lat: place.geometry?.location?.lat,
-        lng: place.geometry?.location?.lng,
-      }),
-      email: "",
-      owner: "",
-      reviews: place.user_ratings_total || 0,
-      rating: place.rating || null,
-    };
-  });
+  const leads = await buildLeads(
+    apiKey,
+    filteredPlaces,
+    city,
+    filters.extractEmail
+  );
 
   return NextResponse.json({
     leads,

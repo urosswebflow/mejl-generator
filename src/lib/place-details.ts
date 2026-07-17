@@ -1,15 +1,22 @@
-const websiteCache = new Map<string, boolean>();
+export type PlaceWebsiteInfo = {
+  hasWebsite: boolean;
+  websiteUrl: string | null;
+};
 
-export async function placeHasWebsite(
+const websiteCache = new Map<string, PlaceWebsiteInfo>();
+
+export async function fetchPlaceWebsite(
   apiKey: string,
   placeId: string
-): Promise<boolean> {
+): Promise<PlaceWebsiteInfo> {
   if (!placeId) {
-    return false;
+    return { hasWebsite: false, websiteUrl: null };
   }
 
-  if (websiteCache.has(placeId)) {
-    return websiteCache.get(placeId) ?? false;
+  const cached = websiteCache.get(placeId);
+
+  if (cached) {
+    return cached;
   }
 
   const url = new URL(
@@ -24,8 +31,9 @@ export async function placeHasWebsite(
     const data = await response.json();
 
     if (data.status !== "OK") {
-      websiteCache.set(placeId, false);
-      return false;
+      const empty = { hasWebsite: false, websiteUrl: null };
+      websiteCache.set(placeId, empty);
+      return empty;
     }
 
     const website =
@@ -33,13 +41,26 @@ export async function placeHasWebsite(
         ? data.result.website.trim()
         : "";
 
-    const hasWebsite = website.length > 0;
-    websiteCache.set(placeId, hasWebsite);
-    return hasWebsite;
+    const info: PlaceWebsiteInfo = {
+      hasWebsite: website.length > 0,
+      websiteUrl: website.length > 0 ? website : null,
+    };
+
+    websiteCache.set(placeId, info);
+    return info;
   } catch {
-    websiteCache.set(placeId, false);
-    return false;
+    const empty = { hasWebsite: false, websiteUrl: null };
+    websiteCache.set(placeId, empty);
+    return empty;
   }
+}
+
+export async function placeHasWebsite(
+  apiKey: string,
+  placeId: string
+): Promise<boolean> {
+  const info = await fetchPlaceWebsite(apiKey, placeId);
+  return info.hasWebsite;
 }
 
 export function passesWebsiteFilter(
