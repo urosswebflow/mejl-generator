@@ -17,40 +17,26 @@ function getFirstName(owner: string) {
   return owner.trim().split(" ")[0] || "";
 }
 
-export async function POST(request: NextRequest) {
-  try {
-    const { user, error: authError } = await getUserFromRequest(request);
+function buildDefaultTemplatePrompt(params: {
+  greeting: string;
+  businessLabel: string;
+  businessName: string;
+  cityName: string;
+  address: string;
+  firstName: string;
+  email: string;
+}) {
+  const {
+    greeting,
+    businessLabel,
+    businessName,
+    cityName,
+    address,
+    firstName,
+    email,
+  } = params;
 
-    if (!user) {
-      return NextResponse.json({ error: authError }, { status: 401 });
-    }
-
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "GEMINI_API_KEY nije pronađen u .env.local." },
-        { status: 500 }
-      );
-    }
-
-    const body = await request.json();
-
-    const companyName = cleanValue(body.companyName);
-    const profession = cleanValue(body.profession);
-    const city = cleanValue(body.city);
-    const address = cleanValue(body.address);
-    const owner = cleanValue(body.owner);
-    const email = cleanValue(body.email);
-
-    const firstName = getFirstName(owner);
-    const greeting = firstName ? `Zdravo ${firstName},` : "Zdravo,";
-
-    const businessLabel = profession || "biznis";
-    const businessName = companyName || "Vaš biznis";
-    const cityName = city || "Vašem gradu";
-
-    const prompt = `
+  return `
 Ti si profesionalni copywriter za prodajne email proposal-e na srpskom jeziku.
 
 Tvoj zadatak je da napišeš SAMO finalni email proposal, bez subjecta, bez markdown-a, bez objašnjenja.
@@ -130,6 +116,119 @@ Sada napiši finalni email.
 Mora da bude veoma sličan template-u iznad, ali prirodno prilagođen delatnosti.
 Vrati samo email tekst.
 `;
+}
+
+function buildStyleGuidePrompt(params: {
+  greeting: string;
+  businessLabel: string;
+  businessName: string;
+  cityName: string;
+  address: string;
+  firstName: string;
+  email: string;
+  proposalExampleText: string;
+}) {
+  const {
+    greeting,
+    businessLabel,
+    businessName,
+    cityName,
+    address,
+    firstName,
+    email,
+    proposalExampleText,
+  } = params;
+
+  return `
+Ti si profesionalni copywriter za prodajne email proposal-e na srpskom jeziku.
+
+Tvoj zadatak je da napišeš SAMO finalni email proposal, bez subjecta, bez markdown-a, bez objašnjenja.
+
+Korisnik je uploadovao primer propozala koji treba da posluži kao STYLE GUIDE.
+MORAŠ da pratiš strukturu, dužinu, redosled paragrafa, ton i stil tog primera.
+NE kopiraj tekst doslovno — personalizuj ga za novu firmu.
+
+OBAVEZNO:
+- Email mora početi ovako: ${greeting}
+- Nikada ne koristi "Poštovani"
+- Ako postoji ime vlasnika, koristi samo prvo ime u pozdravu
+- Piši srpski latinicom
+- Ton: ljubazan, jasan, profesionalan, ubedljiv, ali nenapadan
+- Ne izmišljaj podatke koje nemaš
+- Ne spominji da si AI
+- Ne piši subject
+- Zadrži isti format nabrajanja kao u primeru (crtice ili redovi, kako je u uploadu)
+- Zadrži potpis i kontakt podatke iz primera ako postoje
+
+PODACI ZA PERSONALIZACIJU:
+Naziv firme/biznisa: ${businessName}
+Delatnost iz pretrage: ${businessLabel}
+Grad: ${cityName}
+Adresa: ${address || "Nije poznata"}
+Ime za obraćanje: ${firstName || "nije uneto"}
+Email: ${email || "nije unet"}
+
+PRIMER PROPOZALA (STYLE GUIDE — prati strukturu i ton):
+---
+${proposalExampleText}
+---
+
+Sada napiši finalni email za novu firmu.
+Mora da bude veoma sličan primeru po strukturi i stilu, ali prirodno prilagođen delatnosti i podacima iznad.
+Vrati samo email tekst.
+`;
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const { user, error: authError } = await getUserFromRequest(request);
+
+    if (!user) {
+      return NextResponse.json({ error: authError }, { status: 401 });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "GEMINI_API_KEY nije pronađen u .env.local." },
+        { status: 500 }
+      );
+    }
+
+    const body = await request.json();
+
+    const companyName = cleanValue(body.companyName);
+    const profession = cleanValue(body.profession);
+    const city = cleanValue(body.city);
+    const address = cleanValue(body.address);
+    const owner = cleanValue(body.owner);
+    const email = cleanValue(body.email);
+    const proposalExampleText = cleanValue(body.proposalExampleText);
+
+    const firstName = getFirstName(owner);
+    const greeting = firstName ? `Zdravo ${firstName},` : "Zdravo,";
+
+    const businessLabel = profession || "biznis";
+    const businessName = companyName || "Vaš biznis";
+    const cityName = city || "Vašem gradu";
+
+    const promptParams = {
+      greeting,
+      businessLabel,
+      businessName,
+      cityName,
+      address,
+      firstName,
+      email,
+    };
+
+    const prompt = proposalExampleText
+      ? buildStyleGuidePrompt({
+          ...promptParams,
+          proposalExampleText,
+        })
+      : buildDefaultTemplatePrompt(promptParams);
 
     const response = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent",

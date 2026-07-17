@@ -13,6 +13,11 @@ import {
   supabase,
 } from "@/lib/supabase";
 import { isValidLeadLimitInput } from "@/lib/limits";
+import { PROPOSAL_UPLOAD_ACCEPT } from "@/lib/proposal-upload-constants";
+import {
+  parseWebsiteFilter,
+  type WebsiteFilter,
+} from "@/lib/search-filters";
 import type { User } from "@supabase/supabase-js";
 
 type SentEmails = {
@@ -41,6 +46,11 @@ type SearchHistory = {
   city: string;
   created_at: string;
   leads: Lead[];
+  website_filter?: string;
+  reviews_min?: number | null;
+  reviews_max?: number | null;
+  proposal_example_text?: string | null;
+  proposal_example_filename?: string | null;
 };
 
 type SharedSearchRow = {
@@ -71,6 +81,11 @@ type SharedNotification = {
   leads: Lead[];
   created_at: string;
   opened_at: string | null;
+  website_filter?: string;
+  reviews_min?: number | null;
+  reviews_max?: number | null;
+  proposal_example_text?: string | null;
+  proposal_example_filename?: string | null;
 };
 
 function escapeHtml(text: string) {
@@ -179,6 +194,21 @@ async function authFetch(url: string, init?: RequestInit) {
   return fetch(url, { ...init, headers });
 }
 
+async function authUploadFile(url: string, file: File) {
+  const token = await getAccessToken();
+  const formData = new FormData();
+
+  formData.append("file", file);
+
+  return fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  });
+}
+
 async function createImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -247,6 +277,20 @@ export default function Home() {
   const [city, setCity] = useState("");
   const [limit, setLimit] = useState("");
   const [searchError, setSearchError] = useState("");
+
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [websiteFilter, setWebsiteFilter] = useState<WebsiteFilter>("any");
+  const [reviewsMin, setReviewsMin] = useState("");
+  const [reviewsMax, setReviewsMax] = useState("");
+  const [proposalExampleText, setProposalExampleText] = useState("");
+  const [proposalExampleFilename, setProposalExampleFilename] = useState("");
+  const [proposalUploadLoading, setProposalUploadLoading] = useState(false);
+  const [proposalUploadError, setProposalUploadError] = useState("");
+
+  const [activeProfession, setActiveProfession] = useState("");
+  const [activeCity, setActiveCity] = useState("");
+  const [activeProposalExampleText, setActiveProposalExampleText] =
+    useState("");
 
   const [view, setView] = useState<"results" | "history">("results");
   const [history, setHistory] = useState<SearchHistory[]>([]);
@@ -521,11 +565,28 @@ export default function Home() {
     }
   }
 
-  async function saveSearchHistory(foundLeads: Lead[]) {
+  async function saveSearchHistory(
+    foundLeads: Lead[],
+    context: {
+      profession: string;
+      city: string;
+      websiteFilter: WebsiteFilter;
+      reviewsMin: string;
+      reviewsMax: string;
+      proposalExampleText: string;
+      proposalExampleFilename: string;
+    }
+  ) {
     if (!user) return null;
 
-    const title = makeTitle(profession, city);
+    const title = makeTitle(context.profession, context.city);
     const normalizedLeads = foundLeads.map(normalizeLead);
+    const parsedReviewsMin = context.reviewsMin.trim()
+      ? Number.parseInt(context.reviewsMin.trim(), 10)
+      : null;
+    const parsedReviewsMax = context.reviewsMax.trim()
+      ? Number.parseInt(context.reviewsMax.trim(), 10)
+      : null;
 
     try {
       const { data, error } = await withTimeout(
@@ -534,9 +595,18 @@ export default function Home() {
           .insert({
             user_id: user.id,
             title,
-            profession,
-            city,
+            profession: context.profession,
+            city: context.city,
             leads: normalizedLeads,
+            website_filter: context.websiteFilter,
+            reviews_min: Number.isFinite(parsedReviewsMin)
+              ? parsedReviewsMin
+              : null,
+            reviews_max: Number.isFinite(parsedReviewsMax)
+              ? parsedReviewsMax
+              : null,
+            proposal_example_text: context.proposalExampleText || null,
+            proposal_example_filename: context.proposalExampleFilename || null,
           })
           .select("id")
           .single()
@@ -554,6 +624,64 @@ export default function Home() {
     }
   }
 
+  function applySearchContextFromHistory(item: SearchHistory) {
+    setActiveProfession(item.profession);
+    setActiveCity(item.city);
+    setActiveProposalExampleText(item.proposal_example_text || "");
+    setWebsiteFilter(parseWebsiteFilter(item.website_filter));
+    setReviewsMin(
+      item.reviews_min !== null && item.reviews_min !== undefined
+        ? String(item.reviews_min)
+        : ""
+    );
+    setReviewsMax(
+      item.reviews_max !== null && item.reviews_max !== undefined
+        ? String(item.reviews_max)
+        : ""
+    );
+    setProposalExampleText(item.proposal_example_text || "");
+    setProposalExampleFilename(item.proposal_example_filename || "");
+    setProposalUploadError("");
+  }
+
+  async function handleProposalFileChange(
+    event: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    setProposalUploadLoading(true);
+    setProposalUploadError("");
+
+    try {
+      const response = await authUploadFile("/api/parse-proposal-file", file);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Greška pri učitavanju fajla.");
+      }
+
+      setProposalExampleText(data.text || "");
+      setProposalExampleFilename(data.filename || file.name);
+    } catch (error) {
+      setProposalExampleText("");
+      setProposalExampleFilename("");
+      setProposalUploadError(requestErrorMessage(error));
+    } finally {
+      setProposalUploadLoading(false);
+      event.target.value = "";
+    }
+  }
+
+  function clearProposalUpload() {
+    setProposalExampleText("");
+    setProposalExampleFilename("");
+    setProposalUploadError("");
+  }
+
   async function generateLeads() {
     if (!canSearch) return;
 
@@ -561,12 +689,33 @@ export default function Home() {
     setView("results");
     setSearchError("");
 
+    const searchProfession = profession.trim();
+    const searchCity = city.trim();
+    const searchContext = {
+      profession: searchProfession,
+      city: searchCity,
+      websiteFilter,
+      reviewsMin,
+      reviewsMax,
+      proposalExampleText,
+      proposalExampleFilename,
+    };
+
     try {
       const params = new URLSearchParams({
-        profession: profession.trim(),
-        city: city.trim(),
+        profession: searchProfession,
+        city: searchCity,
         limit: limit.trim(),
+        websiteFilter,
       });
+
+      if (reviewsMin.trim()) {
+        params.set("reviewsMin", reviewsMin.trim());
+      }
+
+      if (reviewsMax.trim()) {
+        params.set("reviewsMax", reviewsMax.trim());
+      }
 
       const response = await authFetch(`/api/places?${params.toString()}`);
       const data = await response.json();
@@ -581,8 +730,11 @@ export default function Home() {
       const foundLeads = (data.leads || []).map(normalizeLead);
 
       setLeads(foundLeads);
+      setActiveProfession(searchProfession);
+      setActiveCity(searchCity);
+      setActiveProposalExampleText(proposalExampleText);
 
-      const newHistoryId = await saveSearchHistory(foundLeads);
+      const newHistoryId = await saveSearchHistory(foundLeads, searchContext);
       setActiveHistoryId(newHistoryId);
       setProfession("");
       setCity("");
@@ -701,6 +853,11 @@ export default function Home() {
             leads: (search.leads || []).map(normalizeLead),
             created_at: row.created_at,
             opened_at: row.opened_at,
+            website_filter: search.website_filter,
+            reviews_min: search.reviews_min,
+            reviews_max: search.reviews_max,
+            proposal_example_text: search.proposal_example_text,
+            proposal_example_filename: search.proposal_example_filename,
           };
         })
         .filter(Boolean) as SharedNotification[];
@@ -720,12 +877,32 @@ export default function Home() {
 
     setLeads(normalizedLeads);
     setActiveHistoryId(item.id);
+    applySearchContextFromHistory(item);
+    setFiltersOpen(true);
     setView("results");
   }
 
   async function openSharedItem(item: SharedNotification) {
     setLeads((item.leads || []).map(normalizeLead));
     setActiveHistoryId(item.search_id);
+    setActiveProfession(item.profession);
+    setActiveCity(item.city);
+    setActiveProposalExampleText(item.proposal_example_text || "");
+    setWebsiteFilter(parseWebsiteFilter(item.website_filter));
+    setReviewsMin(
+      item.reviews_min !== null && item.reviews_min !== undefined
+        ? String(item.reviews_min)
+        : ""
+    );
+    setReviewsMax(
+      item.reviews_max !== null && item.reviews_max !== undefined
+        ? String(item.reviews_max)
+        : ""
+    );
+    setProposalExampleText(item.proposal_example_text || "");
+    setProposalExampleFilename(item.proposal_example_filename || "");
+    setProposalUploadError("");
+    setFiltersOpen(true);
     setView("results");
     setBellOpen(false);
 
@@ -1048,11 +1225,12 @@ export default function Home() {
         method: "POST",
         body: JSON.stringify({
           companyName: lead.name,
-          profession,
-          city,
+          profession: activeProfession,
+          city: activeCity,
           address: lead.address,
           owner: lead.owner,
           email: lead.email,
+          proposalExampleText: activeProposalExampleText,
         }),
       });
 
@@ -1457,16 +1635,117 @@ export default function Home() {
               placeholder="Grad"
             />
 
+            <div className="flex gap-2">
             <input
               value={limit}
               onChange={(e) => setLimit(e.target.value)}
               autoComplete="off"
-              className="rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3"
+              className="min-w-0 flex-1 rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3"
               placeholder="Broj firmi"
               type="number"
               min={1}
             />
+
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((open) => !open)}
+              className={`shrink-0 rounded-xl border px-4 py-3 font-semibold transition ${
+                filtersOpen
+                  ? "border-white bg-white text-black"
+                  : "border-zinc-700 bg-zinc-950 text-white hover:bg-zinc-800"
+              }`}
+            >
+              Filteri
+            </button>
+            </div>
           </div>
+
+          {filtersOpen && (
+            <div className="mt-3 grid gap-3 rounded-xl border border-zinc-800 bg-zinc-950 p-4 sm:grid-cols-2 lg:grid-cols-3">
+              <label className="block">
+                <span className="mb-1 block text-sm text-zinc-400">Web sajt</span>
+                <select
+                  value={websiteFilter}
+                  onChange={(e) =>
+                    setWebsiteFilter(parseWebsiteFilter(e.target.value))
+                  }
+                  className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3"
+                >
+                  <option value="any">Svejedno</option>
+                  <option value="required">Mora imati sajt</option>
+                  <option value="forbidden">Ne sme imati sajt</option>
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-sm text-zinc-400">
+                  Min. broj recenzija
+                </span>
+                <input
+                  value={reviewsMin}
+                  onChange={(e) => setReviewsMin(e.target.value)}
+                  autoComplete="off"
+                  className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3"
+                  placeholder="npr. 20"
+                  type="number"
+                  min={0}
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-sm text-zinc-400">
+                  Max. broj recenzija
+                </span>
+                <input
+                  value={reviewsMax}
+                  onChange={(e) => setReviewsMax(e.target.value)}
+                  autoComplete="off"
+                  className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3"
+                  placeholder="npr. 300"
+                  type="number"
+                  min={0}
+                />
+              </label>
+
+              <div className="sm:col-span-2 lg:col-span-3">
+                <span className="mb-1 block text-sm text-zinc-400">
+                  Primer propozala (PDF ili DOCX)
+                </span>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    type="file"
+                    accept={PROPOSAL_UPLOAD_ACCEPT}
+                    onChange={handleProposalFileChange}
+                    disabled={proposalUploadLoading}
+                    className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-700 file:px-3 file:py-1 file:text-sm file:text-white"
+                  />
+                  {proposalExampleFilename && (
+                    <button
+                      type="button"
+                      onClick={clearProposalUpload}
+                      className="shrink-0 rounded-xl bg-zinc-800 px-4 py-3 text-sm font-semibold transition hover:bg-zinc-700"
+                    >
+                      Ukloni
+                    </button>
+                  )}
+                </div>
+                {proposalUploadLoading && (
+                  <p className="mt-2 text-sm text-zinc-400">Učitavam fajl...</p>
+                )}
+                {proposalExampleFilename && !proposalUploadLoading && (
+                  <p className="mt-2 text-sm text-emerald-400">
+                    Učitan fajl: {proposalExampleFilename}
+                  </p>
+                )}
+                {proposalUploadError && (
+                  <p className="mt-2 text-sm text-red-400">{proposalUploadError}</p>
+                )}
+                <p className="mt-2 text-xs text-zinc-500">
+                  Ako ne uploaduješ fajl, propozal se generiše automatski kao do sada.
+                </p>
+              </div>
+            </div>
+          )}
 
           {searchError && (
             <p className="mt-4 text-sm text-red-400">{searchError}</p>

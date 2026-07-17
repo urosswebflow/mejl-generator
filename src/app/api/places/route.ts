@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserFromRequest } from "@/lib/api-auth";
 import { geocodeCity } from "@/lib/google-geocode";
 import { parseLeadLimit } from "@/lib/limits";
+import { placeHasWebsite, passesWebsiteFilter } from "@/lib/place-details";
 import {
   buildSearchQueries,
   createPlacesCollector,
@@ -13,7 +14,56 @@ import {
   type PlaceResult,
 } from "@/lib/places-search";
 import { buildGoogleMapsUrl } from "@/lib/google-maps-url";
+import {
+  parseSearchFilters,
+  passesReviewFilter,
+} from "@/lib/search-filters";
 import { normalizeText } from "@/lib/text-normalize";
+
+async function finalizeFilteredPlaces(
+  apiKey: string,
+  places: PlaceResult[],
+  limit: number,
+  websiteFilter: "any" | "required" | "forbidden",
+  reviewsMin: number | null,
+  reviewsMax: number | null
+) {
+  const reviewFiltered = places
+    .sort(
+      (a, b) => (b.user_ratings_total || 0) - (a.user_ratings_total || 0)
+    )
+    .filter((place) =>
+      passesReviewFilter(
+        place.user_ratings_total || 0,
+        reviewsMin,
+        reviewsMax
+      )
+    );
+
+  if (websiteFilter === "any") {
+    return reviewFiltered.slice(0, limit);
+  }
+
+  const matched: PlaceResult[] = [];
+
+  for (const place of reviewFiltered) {
+    if (matched.length >= limit) {
+      break;
+    }
+
+    if (!place.place_id) {
+      continue;
+    }
+
+    const hasWebsite = await placeHasWebsite(apiKey, place.place_id);
+
+    if (passesWebsiteFilter(hasWebsite, websiteFilter)) {
+      matched.push(place);
+    }
+  }
+
+  return matched;
+}
 
 export async function GET(request: NextRequest) {
   const { user, error: authError } = await getUserFromRequest(request);
@@ -36,6 +86,11 @@ export async function GET(request: NextRequest) {
   const profession = searchParams.get("profession")?.trim() || "";
   const city = searchParams.get("city")?.trim() || "";
   const limit = parseLeadLimit(searchParams.get("limit"));
+  const filters = parseSearchFilters({
+    websiteFilter: searchParams.get("websiteFilter"),
+    reviewsMin: searchParams.get("reviewsMin"),
+    reviewsMax: searchParams.get("reviewsMax"),
+  });
 
   if (!profession || !city) {
     return NextResponse.json(
@@ -55,7 +110,9 @@ export async function GET(request: NextRequest) {
 
   if (!cityBounds) {
     return NextResponse.json(
-      { error: `Grad "${city}" nije pronađen. Proverite naziv (npr. Beograd, Novi Sad).` },
+      {
+        error: `Grad "${city}" nije pronađen. Proverite naziv (npr. Beograd, Novi Sad).`,
+      },
       { status: 400 }
     );
   }
@@ -89,17 +146,22 @@ export async function GET(request: NextRequest) {
   }
 
   const rawCount = allPlacesMap.size;
-  const filteredPlaces = filterPlaces(
+  const baseFiltered = filterPlaces(
     Array.from(allPlacesMap.values()),
     city,
     profession,
     category,
     cityBounds
-  )
-    .sort(
-      (a, b) => (b.user_ratings_total || 0) - (a.user_ratings_total || 0)
-    )
-    .slice(0, limit);
+  );
+
+  const filteredPlaces = await finalizeFilteredPlaces(
+    apiKey,
+    baseFiltered,
+    limit,
+    filters.websiteFilter,
+    filters.reviewsMin,
+    filters.reviewsMax
+  );
 
   const leads = filteredPlaces.map((place) => {
     const address = place.formatted_address || city;
@@ -127,9 +189,10 @@ export async function GET(request: NextRequest) {
     count: leads.length,
     requested: limit,
     queriesUsed: queries.length,
+    filters,
     stats: {
       rawCount,
-      filteredCount: filteredPlaces.length,
+      filteredCount: baseFiltered.length,
       returnedCount: leads.length,
       gridUsed,
     },
