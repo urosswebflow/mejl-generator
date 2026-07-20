@@ -1,5 +1,5 @@
 import mammoth from "mammoth";
-import { PDFParse } from "pdf-parse";
+import pdf from "pdf-parse";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_EXTRACTED_CHARS = 12000;
@@ -41,9 +41,7 @@ export async function extractProposalFileText(
   let extracted = "";
 
   if (isPdf) {
-    const parser = new PDFParse({ data: buffer });
-    const parsed = await parser.getText();
-    await parser.destroy();
+    const parsed = await pdf(buffer);
     extracted = parsed.text || "";
   } else {
     const parsed = await mammoth.extractRawText({ buffer });
