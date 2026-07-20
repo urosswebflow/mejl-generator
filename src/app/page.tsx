@@ -890,6 +890,7 @@ export default function Home() {
       setProposalExampleFilename(
         template.original_filename || `${template.name}.txt`
       );
+      setActiveProposalExampleText(template.content_text);
       setActiveTemplateId(template.id);
 
       if (activeHistoryId) {
@@ -925,6 +926,7 @@ export default function Home() {
         setActiveTemplateId(null);
         setProposalExampleText("");
         setProposalExampleFilename("");
+        setActiveProposalExampleText("");
 
         if (activeHistoryId) {
           await persistActiveTemplate(activeHistoryId, null);
@@ -944,6 +946,7 @@ export default function Home() {
   async function clearActiveTemplate() {
     setProposalExampleText("");
     setProposalExampleFilename("");
+    setActiveProposalExampleText("");
     setActiveTemplateId(null);
 
     if (activeHistoryId) {
