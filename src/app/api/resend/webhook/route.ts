@@ -125,9 +125,16 @@ export async function POST(request: NextRequest) {
   }
 
   const payload = await request.text();
-  const webhookId = request.headers.get("webhook-id") || "";
-  const webhookTimestamp = request.headers.get("webhook-timestamp") || "";
-  const webhookSignature = request.headers.get("webhook-signature") || "";
+  const webhookId =
+    request.headers.get("svix-id") || request.headers.get("webhook-id") || "";
+  const webhookTimestamp =
+    request.headers.get("svix-timestamp") ||
+    request.headers.get("webhook-timestamp") ||
+    "";
+  const webhookSignature =
+    request.headers.get("svix-signature") ||
+    request.headers.get("webhook-signature") ||
+    "";
 
   if (!webhookId || !webhookTimestamp || !webhookSignature) {
     return NextResponse.json(
