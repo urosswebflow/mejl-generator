@@ -46,6 +46,16 @@ export function plainTextToHtml(text: string) {
     .join("");
 }
 
+export function stripReplyPrefix(subject: string) {
+  const trimmed = subject.trim();
+
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  return trimmed.replace(/^(re:\s*)+/i, "").trim() || trimmed;
+}
+
 export function buildReplySubject(subject: string) {
   const trimmed = subject.trim();
 

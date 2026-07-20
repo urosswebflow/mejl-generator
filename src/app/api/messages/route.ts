@@ -4,7 +4,8 @@ import {
   getUserFromRequest,
 } from "@/lib/api-auth";
 import { isValidFolder } from "@/lib/message-store";
-import type { MessageFolder } from "@/lib/messages";
+import { buildThreadSummaries } from "@/lib/message-threads";
+import type { MessageFolder, MessageRow } from "@/lib/messages";
 
 function cleanValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -55,6 +56,28 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  if (folder === "inbox" || folder === "sent") {
+    const { data, error } = await supabase
+      .from("messages")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("sender_email_id", senderEmailId)
+      .neq("folder", "trash")
+      .order("created_at", { ascending: false })
+      .limit(500);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    const threads = buildThreadSummaries(
+      (data || []) as MessageRow[],
+      folder
+    );
+
+    return NextResponse.json({ threads });
+  }
+
   let query = supabase
     .from("messages")
     .select("*")
@@ -63,14 +86,6 @@ export async function GET(request: NextRequest) {
     .eq("folder", folder)
     .order("created_at", { ascending: false })
     .limit(200);
-
-  if (folder === "inbox") {
-    query = query.eq("direction", "inbound");
-  }
-
-  if (folder === "sent") {
-    query = query.eq("direction", "outbound");
-  }
 
   const { data, error } = await query;
 

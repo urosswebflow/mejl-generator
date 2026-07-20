@@ -111,6 +111,7 @@ async function handleReceived(
     subject: receivedEmail.subject || data.subject || "(bez subject-a)",
     bodyText: receivedEmail.text,
     bodyHtml: receivedEmail.html,
+    counterpartyEmail: receivedEmail.from || data.from,
   });
 }
 

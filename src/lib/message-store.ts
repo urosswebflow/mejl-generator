@@ -3,6 +3,91 @@ import { plainTextToHtml } from "@/lib/email-html";
 import type { MessageFolder, MessageRow } from "@/lib/messages";
 import { normalizeEmailAddress } from "@/lib/messages";
 
+async function resolveThreadIdFromReply(
+  supabase: SupabaseClient,
+  inReplyTo?: string | null
+) {
+  if (!inReplyTo) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("messages")
+    .select("thread_id,id")
+    .eq("id", inReplyTo)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return data.thread_id || data.id;
+}
+
+async function findThreadIdForCounterparty(
+  supabase: SupabaseClient,
+  params: {
+    userId: string;
+    senderEmailId: string;
+    emailAddress: string;
+  }
+) {
+  const normalized = normalizeEmailAddress(params.emailAddress);
+
+  const { data, error } = await supabase
+    .from("messages")
+    .select("thread_id,id,from_address,to_address")
+    .eq("user_id", params.userId)
+    .eq("sender_email_id", params.senderEmailId)
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  for (const row of data || []) {
+    if (
+      normalizeEmailAddress(row.from_address) === normalized ||
+      normalizeEmailAddress(row.to_address) === normalized
+    ) {
+      return row.thread_id || row.id;
+    }
+  }
+
+  return null;
+}
+
+async function ensureMessageThreadId(
+  supabase: SupabaseClient,
+  message: MessageRow,
+  preferredThreadId?: string | null
+) {
+  const threadId = preferredThreadId || message.thread_id || message.id;
+
+  if (message.thread_id === threadId) {
+    return threadId;
+  }
+
+  const { error } = await supabase
+    .from("messages")
+    .update({
+      thread_id: threadId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", message.id);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return threadId;
+}
+
 export async function findSenderEmailByAddress(
   supabase: SupabaseClient,
   emailAddress: string
@@ -36,6 +121,7 @@ export async function insertOutboundMessage(
 ) {
   const now = new Date().toISOString();
   const html = plainTextToHtml(params.text);
+  const threadId = await resolveThreadIdFromReply(supabase, params.inReplyTo);
 
   const { data, error } = await supabase
     .from("messages")
@@ -50,6 +136,7 @@ export async function insertOutboundMessage(
       body_text: params.text,
       body_html: html,
       in_reply_to: params.inReplyTo || null,
+      thread_id: threadId,
       updated_at: now,
     })
     .select("*")
@@ -59,7 +146,13 @@ export async function insertOutboundMessage(
     throw new Error(error?.message || "Poruka nije sačuvana.");
   }
 
-  return data as MessageRow;
+  const message = data as MessageRow;
+  await ensureMessageThreadId(supabase, message, threadId);
+
+  return {
+    ...message,
+    thread_id: threadId || message.id,
+  } as MessageRow;
 }
 
 export async function attachResendEmailId(
@@ -229,8 +322,19 @@ export async function insertInboundMessage(
     bodyText: string | null;
     bodyHtml: string | null;
     inReplyTo?: string | null;
+    counterpartyEmail?: string | null;
   }
 ) {
+  let threadId = await resolveThreadIdFromReply(supabase, params.inReplyTo);
+
+  if (!threadId && params.counterpartyEmail) {
+    threadId = await findThreadIdForCounterparty(supabase, {
+      userId: params.userId,
+      senderEmailId: params.senderEmailId,
+      emailAddress: params.counterpartyEmail,
+    });
+  }
+
   const { data, error } = await supabase
     .from("messages")
     .insert({
@@ -245,6 +349,7 @@ export async function insertInboundMessage(
       body_text: params.bodyText,
       body_html: params.bodyHtml,
       in_reply_to: params.inReplyTo || null,
+      thread_id: threadId,
       updated_at: new Date().toISOString(),
     })
     .select("*")
@@ -264,7 +369,13 @@ export async function insertInboundMessage(
     throw new Error(error.message);
   }
 
-  return data as MessageRow;
+  const message = data as MessageRow;
+  await ensureMessageThreadId(supabase, message, threadId);
+
+  return {
+    ...message,
+    thread_id: threadId || message.id,
+  } as MessageRow;
 }
 
 export function isValidFolder(value: string): value is MessageFolder {

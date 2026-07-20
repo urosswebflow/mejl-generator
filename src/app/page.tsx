@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import Cropper from "react-easy-crop";
-import { Share2 } from "lucide-react";
+import { Share2, Trash2 } from "lucide-react";
 import {
   resolveGoogleMapsUrl,
   resolvePlaceId,
@@ -61,6 +61,15 @@ type SearchHistory = {
   proposal_example_filename?: string | null;
   extract_email?: boolean;
   sender_email_id?: string | null;
+  active_template_id?: string | null;
+};
+
+type ProposalTemplate = {
+  id: string;
+  name: string;
+  content_text: string;
+  original_filename: string | null;
+  created_at: string;
 };
 
 type SharedSearchRow = {
@@ -219,11 +228,12 @@ async function authFetch(url: string, init?: RequestInit) {
   return fetch(url, { ...init, headers });
 }
 
-async function authUploadFile(url: string, file: File) {
+async function authUploadTemplateFile(url: string, file: File, name: string) {
   const token = await getAccessToken();
   const formData = new FormData();
 
   formData.append("file", file);
+  formData.append("name", name);
 
   return fetch(url, {
     method: "POST",
@@ -309,8 +319,16 @@ export default function Home() {
   const [reviewsMax, setReviewsMax] = useState("");
   const [proposalExampleText, setProposalExampleText] = useState("");
   const [proposalExampleFilename, setProposalExampleFilename] = useState("");
-  const [proposalUploadLoading, setProposalUploadLoading] = useState(false);
-  const [proposalUploadError, setProposalUploadError] = useState("");
+  const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<ProposalTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [createTemplateModalOpen, setCreateTemplateModalOpen] = useState(false);
+  const [selectTemplateModalOpen, setSelectTemplateModalOpen] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+  const [templateFile, setTemplateFile] = useState<File | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [templateActionLoading, setTemplateActionLoading] = useState(false);
+  const [templateActionError, setTemplateActionError] = useState("");
   const [extractEmail, setExtractEmail] = useState(false);
 
   const [activeProfession, setActiveProfession] = useState("");
@@ -477,6 +495,7 @@ export default function Home() {
     }
 
     void loadSenderEmails();
+    void loadTemplates();
   }, [user?.id]);
 
   useEffect(() => {
@@ -661,6 +680,64 @@ export default function Home() {
     setLockedSenderEmailId(senderEmailId);
   }
 
+  async function persistActiveTemplate(
+    searchId: string,
+    template: ProposalTemplate | null
+  ) {
+    const { error } = await withTimeout(
+      supabase
+        .from("search_history")
+        .update({
+          active_template_id: template?.id || null,
+          proposal_example_text: template?.content_text || null,
+          proposal_example_filename:
+            template?.original_filename || template?.name || null,
+        })
+        .eq("id", searchId)
+    );
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    setHistory((prev) =>
+      prev.map((item) =>
+        item.id === searchId
+          ? {
+              ...item,
+              active_template_id: template?.id || null,
+              proposal_example_text: template?.content_text || null,
+              proposal_example_filename:
+                template?.original_filename || template?.name || null,
+            }
+          : item
+      )
+    );
+  }
+
+  async function loadTemplates() {
+    setTemplatesLoading(true);
+
+    try {
+      const response = await authFetch("/api/proposal-templates");
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Greška pri učitavanju šablona.");
+      }
+
+      setTemplates((data.templates || []) as ProposalTemplate[]);
+    } catch (error) {
+      console.error(
+        "Greška pri učitavanju šablona:",
+        requestErrorMessage(error)
+      );
+      setTemplates([]);
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }
+
   async function saveSearchHistory(
     foundLeads: Lead[],
     context: {
@@ -671,6 +748,7 @@ export default function Home() {
       reviewsMax: string;
       proposalExampleText: string;
       proposalExampleFilename: string;
+      activeTemplateId: string | null;
       extractEmail: boolean;
     }
   ) {
@@ -704,6 +782,7 @@ export default function Home() {
               : null,
             proposal_example_text: context.proposalExampleText || null,
             proposal_example_filename: context.proposalExampleFilename || null,
+            active_template_id: context.activeTemplateId,
             extract_email: context.extractEmail,
           })
           .select("id")
@@ -739,46 +818,144 @@ export default function Home() {
     );
     setProposalExampleText(item.proposal_example_text || "");
     setProposalExampleFilename(item.proposal_example_filename || "");
+    setActiveTemplateId(item.active_template_id || null);
     setExtractEmail(Boolean(item.extract_email));
-    setProposalUploadError("");
+    setTemplateActionError("");
   }
 
-  async function handleProposalFileChange(
-    event: React.ChangeEvent<HTMLInputElement>
-  ) {
-    const file = event.target.files?.[0];
+  function openCreateTemplateModal() {
+    setTemplateName("");
+    setTemplateFile(null);
+    setTemplateActionError("");
+    setCreateTemplateModalOpen(true);
+  }
 
-    if (!file) {
+  function openSelectTemplateModal() {
+    setSelectedTemplateId(activeTemplateId || "");
+    setTemplateActionError("");
+    setSelectTemplateModalOpen(true);
+  }
+
+  async function createTemplate() {
+    if (!templateName.trim()) {
+      setTemplateActionError("Unesite naziv šablona.");
       return;
     }
 
-    setProposalUploadLoading(true);
-    setProposalUploadError("");
+    if (!templateFile) {
+      setTemplateActionError("Izaberite PDF ili DOCX fajl.");
+      return;
+    }
+
+    setTemplateActionLoading(true);
+    setTemplateActionError("");
 
     try {
-      const response = await authUploadFile("/api/parse-proposal-file", file);
+      const response = await authUploadTemplateFile(
+        "/api/proposal-templates",
+        templateFile,
+        templateName.trim()
+      );
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Greška pri učitavanju fajla.");
+        throw new Error(data.error || "Greška pri čuvanju šablona.");
       }
 
-      setProposalExampleText(data.text || "");
-      setProposalExampleFilename(data.filename || file.name);
+      const template = data.template as ProposalTemplate;
+      setTemplates((prev) => [template, ...prev]);
+      setCreateTemplateModalOpen(false);
+      setTemplateName("");
+      setTemplateFile(null);
     } catch (error) {
-      setProposalExampleText("");
-      setProposalExampleFilename("");
-      setProposalUploadError(requestErrorMessage(error));
+      setTemplateActionError(requestErrorMessage(error));
     } finally {
-      setProposalUploadLoading(false);
-      event.target.value = "";
+      setTemplateActionLoading(false);
     }
   }
 
-  function clearProposalUpload() {
+  async function applySelectedTemplate() {
+    const template = templates.find((item) => item.id === selectedTemplateId);
+
+    if (!template) {
+      setTemplateActionError("Izaberite šablon.");
+      return;
+    }
+
+    setTemplateActionLoading(true);
+    setTemplateActionError("");
+
+    try {
+      setProposalExampleText(template.content_text);
+      setProposalExampleFilename(
+        template.original_filename || `${template.name}.txt`
+      );
+      setActiveTemplateId(template.id);
+
+      if (activeHistoryId) {
+        await persistActiveTemplate(activeHistoryId, template);
+      }
+
+      setSelectTemplateModalOpen(false);
+    } catch (error) {
+      setTemplateActionError(requestErrorMessage(error));
+    } finally {
+      setTemplateActionLoading(false);
+    }
+  }
+
+  async function deleteTemplate(templateId: string) {
+    setTemplateActionLoading(true);
+    setTemplateActionError("");
+
+    try {
+      const response = await authFetch("/api/proposal-templates", {
+        method: "DELETE",
+        body: JSON.stringify({ id: templateId }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Greška pri brisanju šablona.");
+      }
+
+      setTemplates((prev) => prev.filter((item) => item.id !== templateId));
+
+      if (activeTemplateId === templateId) {
+        setActiveTemplateId(null);
+        setProposalExampleText("");
+        setProposalExampleFilename("");
+
+        if (activeHistoryId) {
+          await persistActiveTemplate(activeHistoryId, null);
+        }
+      }
+
+      if (selectedTemplateId === templateId) {
+        setSelectedTemplateId("");
+      }
+    } catch (error) {
+      setTemplateActionError(requestErrorMessage(error));
+    } finally {
+      setTemplateActionLoading(false);
+    }
+  }
+
+  async function clearActiveTemplate() {
     setProposalExampleText("");
     setProposalExampleFilename("");
-    setProposalUploadError("");
+    setActiveTemplateId(null);
+
+    if (activeHistoryId) {
+      try {
+        await persistActiveTemplate(activeHistoryId, null);
+      } catch (error) {
+        console.error(
+          "Greška pri uklanjanju šablona:",
+          requestErrorMessage(error)
+        );
+      }
+    }
   }
 
   async function generateLeads() {
@@ -798,6 +975,7 @@ export default function Home() {
       reviewsMax,
       proposalExampleText,
       proposalExampleFilename,
+      activeTemplateId,
       extractEmail,
     };
 
@@ -1009,8 +1187,9 @@ export default function Home() {
     );
     setProposalExampleText(item.proposal_example_text || "");
     setProposalExampleFilename(item.proposal_example_filename || "");
+    setActiveTemplateId(null);
     setExtractEmail(Boolean(item.extract_email));
-    setProposalUploadError("");
+    setTemplateActionError("");
     applySearchSenderState(item.sender_email_id);
     setFiltersOpen(true);
     setView("results");
@@ -2025,43 +2204,51 @@ export default function Home() {
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
                   <div className="flex-1">
                     <span className="mb-1 block text-sm text-zinc-400">
-                      Primer propozala (PDF ili DOCX)
+                      Šablon propozala
                     </span>
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <input
-                        type="file"
-                        accept={PROPOSAL_UPLOAD_ACCEPT}
-                        onChange={handleProposalFileChange}
-                        disabled={proposalUploadLoading}
-                        className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-700 file:px-3 file:py-1 file:text-sm file:text-white"
-                      />
-                      {proposalExampleFilename && (
+                      <button
+                        type="button"
+                        onClick={openCreateTemplateModal}
+                        className="rounded-xl bg-zinc-800 px-4 py-3 text-sm font-semibold transition hover:bg-zinc-700"
+                      >
+                        Napravi šablon
+                      </button>
+                      <button
+                        type="button"
+                        onClick={openSelectTemplateModal}
+                        disabled={templatesLoading}
+                        className="rounded-xl bg-zinc-800 px-4 py-3 text-sm font-semibold transition hover:bg-zinc-700 disabled:opacity-50"
+                      >
+                        Izaberi šablon
+                      </button>
+                      {(proposalExampleFilename || activeTemplateId) && (
                         <button
                           type="button"
-                          onClick={clearProposalUpload}
+                          onClick={() => void clearActiveTemplate()}
                           className="shrink-0 rounded-xl bg-zinc-800 px-4 py-3 text-sm font-semibold transition hover:bg-zinc-700"
                         >
                           Ukloni
                         </button>
                       )}
                     </div>
-                    {proposalUploadLoading && (
+                    {templatesLoading && (
                       <p className="mt-2 text-sm text-zinc-400">
-                        Učitavam fajl...
+                        Učitavam šablone...
                       </p>
                     )}
-                    {proposalExampleFilename && !proposalUploadLoading && (
+                    {proposalExampleFilename && (
                       <p className="mt-2 text-sm text-emerald-400">
-                        Učitan fajl: {proposalExampleFilename}
+                        Aktivan šablon: {proposalExampleFilename}
                       </p>
                     )}
-                    {proposalUploadError && (
+                    {templateActionError && !createTemplateModalOpen && !selectTemplateModalOpen && (
                       <p className="mt-2 text-sm text-red-400">
-                        {proposalUploadError}
+                        {templateActionError}
                       </p>
                     )}
                     <p className="mt-2 text-xs text-zinc-500">
-                      Ako ne uploaduješ fajl, propozal se generiše automatski
+                      Ako ne izabereš šablon, propozal se generiše automatski
                       kao do sada.
                     </p>
                   </div>
@@ -2476,6 +2663,143 @@ export default function Home() {
                 >
                   {senderChangeLoading ? "Čuvanje..." : "Da, nastavi"}
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {createTemplateModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center sm:p-6">
+            <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-5 shadow-xl sm:p-6">
+              <h3 className="text-xl font-bold">Napravi šablon</h3>
+
+              <label className="mt-4 block">
+                <span className="mb-2 block text-sm text-zinc-400">
+                  Naziv šablona
+                </span>
+                <input
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  placeholder="npr. followup_1"
+                  className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3"
+                />
+              </label>
+
+              <label className="mt-4 block">
+                <span className="mb-2 block text-sm text-zinc-400">
+                  PDF ili DOCX fajl
+                </span>
+                <input
+                  type="file"
+                  accept={PROPOSAL_UPLOAD_ACCEPT}
+                  onChange={(e) => setTemplateFile(e.target.files?.[0] || null)}
+                  className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-700 file:px-3 file:py-1 file:text-sm file:text-white"
+                />
+              </label>
+
+              {templateActionError && (
+                <p className="mt-3 text-sm text-red-400">{templateActionError}</p>
+              )}
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCreateTemplateModalOpen(false)}
+                  disabled={templateActionLoading}
+                  className="rounded-xl bg-zinc-800 px-5 py-3 font-semibold transition hover:bg-zinc-700"
+                >
+                  Otkaži
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void createTemplate()}
+                  disabled={templateActionLoading}
+                  className="rounded-xl bg-green-700 px-5 py-3 font-semibold transition hover:bg-green-600"
+                >
+                  {templateActionLoading ? "Čuvanje..." : "Sačuvaj šablon"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {selectTemplateModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center sm:p-6">
+            <div className="flex max-h-[90vh] w-full max-w-lg flex-col rounded-2xl border border-zinc-800 bg-zinc-900 shadow-xl">
+              <div className="border-b border-zinc-800 p-5 sm:p-6">
+                <h3 className="text-xl font-bold">Izaberi šablon</h3>
+                <p className="mt-2 text-sm text-zinc-400">
+                  Jedan aktivan šablon važi za ovu pretragu.
+                </p>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-5 sm:p-6">
+                {templates.length === 0 ? (
+                  <p className="text-sm text-zinc-400">
+                    Nema sačuvanih šablona. Prvo napravi šablon.
+                  </p>
+                ) : (
+                  <ul className="space-y-2">
+                    {templates.map((template) => (
+                      <li
+                        key={template.id}
+                        className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3"
+                      >
+                        <input
+                          type="radio"
+                          name="proposal-template"
+                          checked={selectedTemplateId === template.id}
+                          onChange={() => setSelectedTemplateId(template.id)}
+                          className="h-4 w-4 accent-green-500"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold">{template.name}</p>
+                          {template.original_filename && (
+                            <p className="truncate text-xs text-zinc-500">
+                              {template.original_filename}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void deleteTemplate(template.id)}
+                          disabled={templateActionLoading}
+                          className="rounded-lg p-2 text-red-400 transition hover:bg-red-950 disabled:opacity-50"
+                          title="Obriši šablon"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {templateActionError && (
+                  <p className="mt-4 text-sm text-red-400">{templateActionError}</p>
+                )}
+              </div>
+
+              <div className="border-t border-zinc-800 p-5 sm:p-6">
+                <div className="flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setSelectTemplateModalOpen(false)}
+                    disabled={templateActionLoading}
+                    className="rounded-xl bg-zinc-800 px-5 py-3 font-semibold transition hover:bg-zinc-700"
+                  >
+                    Otkaži
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void applySelectedTemplate()}
+                    disabled={templateActionLoading || !selectedTemplateId}
+                    className="rounded-xl bg-green-700 px-5 py-3 font-semibold transition hover:bg-green-600 disabled:opacity-50"
+                  >
+                    {templateActionLoading ? "Primena..." : "Primeni"}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

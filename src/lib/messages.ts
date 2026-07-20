@@ -20,6 +20,7 @@ export type MessageRow = {
   open_count: number;
   click_count: number;
   in_reply_to: string | null;
+  thread_id: string | null;
   trashed_at: string | null;
   created_at: string;
   updated_at: string;
