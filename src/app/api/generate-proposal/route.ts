@@ -29,6 +29,8 @@ export async function POST(request: NextRequest) {
         owner: body.owner,
         email: body.email,
         proposalExampleText: body.proposalExampleText,
+        nameOnlyMode: body.nameOnlyMode === true,
+        templateOwnerName: body.templateOwnerName,
       },
       apiKey
     );

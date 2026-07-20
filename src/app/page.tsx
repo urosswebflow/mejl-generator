@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import Cropper from "react-easy-crop";
-import { Share2, Trash2 } from "lucide-react";
+import { Eye, Share2, Trash2 } from "lucide-react";
 import {
   resolveGoogleMapsUrl,
   resolvePlaceId,
@@ -69,6 +69,8 @@ type ProposalTemplate = {
   name: string;
   content_text: string;
   original_filename: string | null;
+  name_only_mode: boolean;
+  template_owner_name: string | null;
   created_at: string;
 };
 
@@ -228,12 +230,18 @@ async function authFetch(url: string, init?: RequestInit) {
   return fetch(url, { ...init, headers });
 }
 
-async function authUploadTemplateFile(url: string, file: File, name: string) {
+async function authUploadTemplateFile(
+  url: string,
+  file: File,
+  name: string,
+  nameOnlyMode: boolean
+) {
   const token = await getAccessToken();
   const formData = new FormData();
 
   formData.append("file", file);
   formData.append("name", name);
+  formData.append("nameOnlyMode", nameOnlyMode ? "true" : "false");
 
   return fetch(url, {
     method: "POST",
@@ -320,11 +328,19 @@ export default function Home() {
   const [proposalExampleText, setProposalExampleText] = useState("");
   const [proposalExampleFilename, setProposalExampleFilename] = useState("");
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
+  const [activeNameOnlyMode, setActiveNameOnlyMode] = useState(false);
+  const [activeTemplateOwnerName, setActiveTemplateOwnerName] = useState<
+    string | null
+  >(null);
   const [templates, setTemplates] = useState<ProposalTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [createTemplateModalOpen, setCreateTemplateModalOpen] = useState(false);
   const [selectTemplateModalOpen, setSelectTemplateModalOpen] = useState(false);
+  const [templatePreview, setTemplatePreview] = useState<ProposalTemplate | null>(
+    null
+  );
   const [templateName, setTemplateName] = useState("");
+  const [templateNameOnlyMode, setTemplateNameOnlyMode] = useState(false);
   const [templateFile, setTemplateFile] = useState<File | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [templateActionLoading, setTemplateActionLoading] = useState(false);
@@ -497,6 +513,21 @@ export default function Home() {
     void loadSenderEmails();
     void loadTemplates();
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!activeTemplateId) {
+      setActiveNameOnlyMode(false);
+      setActiveTemplateOwnerName(null);
+      return;
+    }
+
+    const template = templates.find((item) => item.id === activeTemplateId);
+
+    if (template) {
+      setActiveNameOnlyMode(Boolean(template.name_only_mode));
+      setActiveTemplateOwnerName(template.template_owner_name || null);
+    }
+  }, [activeTemplateId, templates]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -680,6 +711,11 @@ export default function Home() {
     setLockedSenderEmailId(senderEmailId);
   }
 
+  function syncActiveTemplateMode(template: ProposalTemplate | null) {
+    setActiveNameOnlyMode(Boolean(template?.name_only_mode));
+    setActiveTemplateOwnerName(template?.template_owner_name || null);
+  }
+
   async function persistActiveTemplate(
     searchId: string,
     template: ProposalTemplate | null
@@ -826,6 +862,7 @@ export default function Home() {
   function openCreateTemplateModal() {
     setTemplateName("");
     setTemplateFile(null);
+    setTemplateNameOnlyMode(false);
     setTemplateActionError("");
     setCreateTemplateModalOpen(true);
   }
@@ -854,7 +891,8 @@ export default function Home() {
       const response = await authUploadTemplateFile(
         "/api/proposal-templates",
         templateFile,
-        templateName.trim()
+        templateName.trim(),
+        templateNameOnlyMode
       );
       const data = await response.json();
 
@@ -892,6 +930,7 @@ export default function Home() {
       );
       setActiveProposalExampleText(template.content_text);
       setActiveTemplateId(template.id);
+      syncActiveTemplateMode(template);
 
       if (activeHistoryId) {
         await persistActiveTemplate(activeHistoryId, template);
@@ -931,6 +970,8 @@ export default function Home() {
         if (activeHistoryId) {
           await persistActiveTemplate(activeHistoryId, null);
         }
+
+        syncActiveTemplateMode(null);
       }
 
       if (selectedTemplateId === templateId) {
@@ -948,6 +989,7 @@ export default function Home() {
     setProposalExampleFilename("");
     setActiveProposalExampleText("");
     setActiveTemplateId(null);
+    syncActiveTemplateMode(null);
 
     if (activeHistoryId) {
       try {
@@ -1464,6 +1506,8 @@ export default function Home() {
           owner: lead.owner,
           email: lead.email,
           proposalExampleText: activeProposalExampleText,
+          nameOnlyMode: activeNameOnlyMode,
+          templateOwnerName: activeTemplateOwnerName,
         }),
       });
 
@@ -1512,6 +1556,8 @@ export default function Home() {
           address: lead.address,
           owner: lead.owner,
           proposalExampleText: activeProposalExampleText,
+          nameOnlyMode: activeNameOnlyMode,
+          templateOwnerName: activeTemplateOwnerName,
           proposalText: sendModalPreview,
           subject: sendModalSubject,
           replyToLatest: isFollowUp,
@@ -1711,6 +1757,8 @@ export default function Home() {
           owner: lead.owner,
           email: lead.email,
           proposalExampleText: activeProposalExampleText,
+          nameOnlyMode: activeNameOnlyMode,
+          templateOwnerName: activeTemplateOwnerName,
         }),
       });
 
@@ -2243,6 +2291,7 @@ export default function Home() {
                     {proposalExampleFilename && (
                       <p className="mt-2 text-sm text-emerald-400">
                         Aktivan šablon: {proposalExampleFilename}
+                        {activeNameOnlyMode ? " (menja samo ime)" : ""}
                       </p>
                     )}
                     {templateActionError && !createTemplateModalOpen && !selectTemplateModalOpen && (
@@ -2688,6 +2737,18 @@ export default function Home() {
                 />
               </label>
 
+              <label className="mt-3 flex cursor-pointer items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={templateNameOnlyMode}
+                  onChange={(e) => setTemplateNameOnlyMode(e.target.checked)}
+                  className="h-4 w-4 rounded border-zinc-600 bg-zinc-950"
+                />
+                <span className="text-sm font-medium text-zinc-200">
+                  Menjaj samo ime
+                </span>
+              </label>
+
               <label className="mt-4 block">
                 <span className="mb-2 block text-sm text-zinc-400">
                   PDF ili DOCX fajl
@@ -2763,7 +2824,19 @@ export default function Home() {
                               {template.original_filename}
                             </p>
                           )}
+                          {template.name_only_mode && (
+                            <p className="text-xs text-amber-400">Menja samo ime</p>
+                          )}
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => setTemplatePreview(template)}
+                          disabled={templateActionLoading}
+                          className="rounded-lg p-2 text-zinc-300 transition hover:bg-zinc-800 disabled:opacity-50"
+                          title="Preview šablona"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
                         <button
                           type="button"
                           onClick={() => void deleteTemplate(template.id)}
@@ -2801,6 +2874,39 @@ export default function Home() {
                     className="rounded-xl bg-green-700 px-5 py-3 font-semibold transition hover:bg-green-600 disabled:opacity-50"
                   >
                     {templateActionLoading ? "Primena..." : "Primeni"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {templatePreview && (
+          <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/70 p-4 sm:items-center sm:p-6">
+            <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl border border-zinc-800 bg-zinc-900 shadow-xl">
+              <div className="border-b border-zinc-800 p-5 sm:p-6">
+                <h3 className="text-xl font-bold">Preview: {templatePreview.name}</h3>
+                {templatePreview.name_only_mode && (
+                  <p className="mt-2 text-sm text-amber-400">
+                    Režim: menja se samo ime vlasnika
+                  </p>
+                )}
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-5 sm:p-6">
+                <pre className="whitespace-pre-wrap font-sans text-sm leading-6 text-zinc-200">
+                  {templatePreview.content_text}
+                </pre>
+              </div>
+
+              <div className="border-t border-zinc-800 p-5 sm:p-6">
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setTemplatePreview(null)}
+                    className="rounded-xl bg-zinc-800 px-5 py-3 font-semibold transition hover:bg-zinc-700"
+                  >
+                    Zatvori
                   </button>
                 </div>
               </div>
