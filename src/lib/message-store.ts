@@ -80,6 +80,51 @@ export async function attachResendEmailId(
   }
 }
 
+export async function findMessageById(
+  supabase: SupabaseClient,
+  messageId: string,
+  userId: string
+) {
+  const { data, error } = await supabase
+    .from("messages")
+    .select("*")
+    .eq("id", messageId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data as MessageRow | null) || null;
+}
+
+export async function findLatestOutboundMessageToRecipient(
+  supabase: SupabaseClient,
+  params: {
+    userId: string;
+    senderEmailId: string;
+    recipientEmail: string;
+  }
+) {
+  const { data, error } = await supabase
+    .from("messages")
+    .select("*")
+    .eq("user_id", params.userId)
+    .eq("sender_email_id", params.senderEmailId)
+    .eq("direction", "outbound")
+    .eq("to_address", params.recipientEmail.trim().toLowerCase())
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data as MessageRow | null) || null;
+}
+
 export async function findMessageByResendEmailId(
   supabase: SupabaseClient,
   resendEmailId: string

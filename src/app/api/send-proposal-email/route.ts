@@ -3,8 +3,11 @@ import {
   getAuthedSupabaseClient,
   getUserFromRequest,
 } from "@/lib/api-auth";
+import { buildReplySubject } from "@/lib/email-html";
 import {
   attachResendEmailId,
+  findLatestOutboundMessageToRecipient,
+  findMessageById,
   insertOutboundMessage,
 } from "@/lib/message-store";
 import { generateProposalText } from "@/lib/generate-proposal";
@@ -39,6 +42,7 @@ export async function POST(request: NextRequest) {
     const senderEmailId = cleanValue(body.senderEmailId);
     const recipientEmail = cleanValue(body.recipientEmail).toLowerCase();
     const proposalTextInput = cleanValue(body.proposalText);
+    const replyToLatest = body.replyToLatest === true;
 
     if (!senderEmailId) {
       return NextResponse.json(
@@ -102,6 +106,32 @@ export async function POST(request: NextRequest) {
       subject = `Predlog saradnje — ${cleanValue(body.companyName) || "Vaš biznis"}`;
     }
 
+    let inReplyTo: string | null = null;
+    let replySource = null;
+
+    if (replyToLatest) {
+      replySource = await findLatestOutboundMessageToRecipient(supabase, {
+        userId: user.id,
+        senderEmailId: senderRow.id,
+        recipientEmail,
+      });
+    }
+
+    const inReplyToMessageId = cleanValue(body.inReplyToMessageId);
+
+    if (inReplyToMessageId) {
+      replySource = await findMessageById(
+        supabase,
+        inReplyToMessageId,
+        user.id
+      );
+    }
+
+    if (replySource) {
+      inReplyTo = replySource.id;
+      subject = buildReplySubject(replySource.subject || subject);
+    }
+
     const message = await insertOutboundMessage(supabase, {
       userId: user.id,
       senderEmailId: senderRow.id,
@@ -109,6 +139,7 @@ export async function POST(request: NextRequest) {
       to: recipientEmail,
       subject,
       text: proposal,
+      inReplyTo,
     });
 
     const sendResult = await sendEmail({
@@ -131,6 +162,7 @@ export async function POST(request: NextRequest) {
       to: recipientEmail,
       messageId: message.id,
       resendEmailId: sendResult?.id || null,
+      isReply: Boolean(inReplyTo),
     });
   } catch (error: unknown) {
     const message =

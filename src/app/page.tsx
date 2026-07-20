@@ -22,8 +22,6 @@ import {
 import { markNextSentEmail } from "@/lib/sent-emails";
 import type { User } from "@supabase/supabase-js";
 
-const SELECTED_SENDER_KEY = "selectedSenderEmailId";
-
 type SenderEmail = {
   id: string;
   email: string;
@@ -62,6 +60,7 @@ type SearchHistory = {
   proposal_example_text?: string | null;
   proposal_example_filename?: string | null;
   extract_email?: boolean;
+  sender_email_id?: string | null;
 };
 
 type SharedSearchRow = {
@@ -98,7 +97,21 @@ type SharedNotification = {
   proposal_example_text?: string | null;
   proposal_example_filename?: string | null;
   extract_email?: boolean;
+  sender_email_id?: string | null;
 };
+
+function resolveSearchSenderEmailId(
+  senderEmailId: string | null | undefined,
+  availableEmails: SenderEmail[]
+) {
+  if (!senderEmailId) {
+    return "";
+  }
+
+  return availableEmails.some((item) => item.id === senderEmailId)
+    ? senderEmailId
+    : "";
+}
 
 function escapeHtml(text: string) {
   return String(text || "")
@@ -307,6 +320,12 @@ export default function Home() {
 
   const [senderEmails, setSenderEmails] = useState<SenderEmail[]>([]);
   const [selectedSenderEmailId, setSelectedSenderEmailId] = useState("");
+  const [lockedSenderEmailId, setLockedSenderEmailId] = useState<string | null>(
+    null
+  );
+  const [senderChangeModalOpen, setSenderChangeModalOpen] = useState(false);
+  const [pendingSenderEmailId, setPendingSenderEmailId] = useState("");
+  const [senderChangeLoading, setSenderChangeLoading] = useState(false);
   const [sendModalOpen, setSendModalOpen] = useState(false);
   const [sendModalLeadIndex, setSendModalLeadIndex] = useState<number | null>(
     null
@@ -574,6 +593,8 @@ export default function Home() {
       setSharedNotifications([]);
       setView("results");
       setActiveHistoryId(null);
+      setSelectedSenderEmailId("");
+      setLockedSenderEmailId(null);
       setProfession("");
       setCity("");
       setLimit("");
@@ -598,6 +619,46 @@ export default function Home() {
     } catch (error) {
       console.error("Greška pri čuvanju izmena:", requestErrorMessage(error));
     }
+  }
+
+  function applySearchSenderState(
+    senderEmailId: string | null | undefined,
+    availableEmails: SenderEmail[] = senderEmails
+  ) {
+    const resolvedId = resolveSearchSenderEmailId(senderEmailId, availableEmails);
+    setSelectedSenderEmailId(resolvedId);
+    setLockedSenderEmailId(resolvedId || null);
+  }
+
+  async function persistSearchSenderEmailId(searchId: string, senderEmailId: string) {
+    const { error } = await withTimeout(
+      supabase
+        .from("search_history")
+        .update({ sender_email_id: senderEmailId })
+        .eq("id", searchId)
+    );
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    setHistory((prev) =>
+      prev.map((item) =>
+        item.id === searchId ? { ...item, sender_email_id: senderEmailId } : item
+      )
+    );
+  }
+
+  async function applySenderSelection(senderEmailId: string) {
+    setSelectedSenderEmailId(senderEmailId);
+
+    if (!activeHistoryId) {
+      setLockedSenderEmailId(senderEmailId);
+      return;
+    }
+
+    await persistSearchSenderEmailId(activeHistoryId, senderEmailId);
+    setLockedSenderEmailId(senderEmailId);
   }
 
   async function saveSearchHistory(
@@ -779,6 +840,7 @@ export default function Home() {
 
       const newHistoryId = await saveSearchHistory(foundLeads, searchContext);
       setActiveHistoryId(newHistoryId);
+      applySearchSenderState(null);
       setProfession("");
       setCity("");
       setLimit("");
@@ -902,6 +964,7 @@ export default function Home() {
             proposal_example_text: search.proposal_example_text,
             proposal_example_filename: search.proposal_example_filename,
             extract_email: search.extract_email,
+            sender_email_id: search.sender_email_id,
           };
         })
         .filter(Boolean) as SharedNotification[];
@@ -922,6 +985,7 @@ export default function Home() {
     setLeads(normalizedLeads);
     setActiveHistoryId(item.id);
     applySearchContextFromHistory(item);
+    applySearchSenderState(item.sender_email_id);
     setFiltersOpen(true);
     setView("results");
   }
@@ -947,6 +1011,7 @@ export default function Home() {
     setProposalExampleFilename(item.proposal_example_filename || "");
     setExtractEmail(Boolean(item.extract_email));
     setProposalUploadError("");
+    applySearchSenderState(item.sender_email_id);
     setFiltersOpen(true);
     setView("results");
     setBellOpen(false);
@@ -1001,6 +1066,8 @@ export default function Home() {
         if (activeHistoryId === selectedHistory.id) {
           setActiveHistoryId(null);
           setLeads([]);
+          setSelectedSenderEmailId("");
+          setLockedSenderEmailId(null);
         }
       }
     } catch (error) {
@@ -1121,21 +1188,6 @@ export default function Home() {
 
       const loaded = (data.emails || []) as SenderEmail[];
       setSenderEmails(loaded);
-
-      const savedId = localStorage.getItem(SELECTED_SENDER_KEY);
-      const savedExists = savedId
-        ? loaded.some((item) => item.id === savedId)
-        : false;
-
-      if (savedExists && savedId) {
-        setSelectedSenderEmailId(savedId);
-      } else if (loaded.length > 0) {
-        setSelectedSenderEmailId(loaded[0].id);
-        localStorage.setItem(SELECTED_SENDER_KEY, loaded[0].id);
-      } else {
-        setSelectedSenderEmailId("");
-        localStorage.removeItem(SELECTED_SENDER_KEY);
-      }
     } catch (error) {
       console.error(
         "Greška pri učitavanju sender mejlova:",
@@ -1145,9 +1197,43 @@ export default function Home() {
     }
   }
 
-  function handleSenderChange(senderId: string) {
-    setSelectedSenderEmailId(senderId);
-    localStorage.setItem(SELECTED_SENDER_KEY, senderId);
+  function handleSenderChange(nextSenderId: string) {
+    if (nextSenderId === selectedSenderEmailId) {
+      return;
+    }
+
+    if (lockedSenderEmailId && nextSenderId !== lockedSenderEmailId) {
+      setPendingSenderEmailId(nextSenderId);
+      setSenderChangeModalOpen(true);
+      return;
+    }
+
+    void applySenderSelection(nextSenderId).catch((error) => {
+      console.error("Greška pri čuvanju sender mejla:", requestErrorMessage(error));
+    });
+  }
+
+  async function confirmSenderChange() {
+    if (!pendingSenderEmailId) {
+      return;
+    }
+
+    setSenderChangeLoading(true);
+
+    try {
+      await applySenderSelection(pendingSenderEmailId);
+      setSenderChangeModalOpen(false);
+      setPendingSenderEmailId("");
+    } catch (error) {
+      console.error("Greška pri promeni sender mejla:", requestErrorMessage(error));
+    } finally {
+      setSenderChangeLoading(false);
+    }
+  }
+
+  function cancelSenderChange() {
+    setSenderChangeModalOpen(false);
+    setPendingSenderEmailId("");
   }
 
   function isValidRecipientEmail(email: string) {
@@ -1231,6 +1317,8 @@ export default function Home() {
     setSendModalError("");
 
     try {
+      const isFollowUp = Boolean(lead.sentEmails?.first);
+
       const response = await authFetch("/api/send-proposal-email", {
         method: "POST",
         body: JSON.stringify({
@@ -1244,6 +1332,7 @@ export default function Home() {
           proposalExampleText: activeProposalExampleText,
           proposalText: sendModalPreview,
           subject: sendModalSubject,
+          replyToLatest: isFollowUp,
         }),
       });
 
@@ -2360,6 +2449,38 @@ export default function Home() {
           </>
         )}
 
+        {senderChangeModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center sm:p-6">
+            <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-5 shadow-xl sm:p-6">
+              <h3 className="text-xl font-bold">Promena mejla</h3>
+
+              <p className="mt-3 text-zinc-300">
+                Menjaš mejl za ovu pretragu. Da li želiš da nastaviš?
+              </p>
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={cancelSenderChange}
+                  disabled={senderChangeLoading}
+                  className="rounded-xl bg-zinc-800 px-5 py-3 font-semibold transition hover:bg-zinc-700"
+                >
+                  Ne
+                </button>
+
+                <button
+                  type="button"
+                  onClick={confirmSenderChange}
+                  disabled={senderChangeLoading}
+                  className="rounded-xl bg-green-700 px-5 py-3 font-semibold transition hover:bg-green-600"
+                >
+                  {senderChangeLoading ? "Čuvanje..." : "Da, nastavi"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {sendModalOpen && sendModalLeadIndex !== null && (
           <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center sm:p-6">
             <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl border border-zinc-800 bg-zinc-900 shadow-xl">
@@ -2373,6 +2494,11 @@ export default function Home() {
                   {senderEmails.find((item) => item.id === selectedSenderEmailId)
                     ?.email || "—"}
                 </p>
+                {leads[sendModalLeadIndex]?.sentEmails?.first && (
+                  <p className="mt-2 text-sm text-amber-400">
+                    Ovo će biti poslato kao reply na poslednji mejl ovom leadu.
+                  </p>
+                )}
               </div>
 
               <div className="overflow-y-auto p-5 sm:p-6">

@@ -498,8 +498,7 @@ export default function InboxPage() {
                         </pre>
                       </div>
 
-                      {selectedMessage.direction === "inbound" &&
-                        activeFolder !== "trash" && (
+                      {activeFolder !== "trash" && (
                           <div className="border-t border-zinc-800 px-4 py-4 sm:px-5">
                             <div className="mb-3 flex items-center justify-between gap-3">
                               <h4 className="font-semibold">Reply</h4>
