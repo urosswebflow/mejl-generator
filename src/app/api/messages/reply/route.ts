@@ -3,11 +3,11 @@ import {
   getAuthedSupabaseClient,
   getUserFromRequest,
 } from "@/lib/api-auth";
+import { buildReplySubject } from "@/lib/email-html";
 import {
   attachResendEmailId,
   insertOutboundMessage,
 } from "@/lib/message-store";
-import { generateProposalText } from "@/lib/generate-proposal";
 import { sendEmail } from "@/lib/send-email";
 
 function cleanValue(value: unknown) {
@@ -26,34 +26,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: authError }, { status: 401 });
     }
 
-    const geminiKey = process.env.GEMINI_API_KEY;
-
-    if (!geminiKey) {
-      return NextResponse.json(
-        { error: "GEMINI_API_KEY nije pronađen u .env.local." },
-        { status: 500 }
-      );
-    }
-
-    const body = await request.json();
-    const senderEmailId = cleanValue(body.senderEmailId);
-    const recipientEmail = cleanValue(body.recipientEmail).toLowerCase();
-    const proposalTextInput = cleanValue(body.proposalText);
-
-    if (!senderEmailId) {
-      return NextResponse.json(
-        { error: "Izaberite email sa kog šaljete." },
-        { status: 400 }
-      );
-    }
-
-    if (!recipientEmail || !isValidEmail(recipientEmail)) {
-      return NextResponse.json(
-        { error: "Lead nema ispravan email primaoca." },
-        { status: 400 }
-      );
-    }
-
     const supabase = getAuthedSupabaseClient(request);
 
     if (!supabase) {
@@ -63,59 +35,90 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const body = await request.json();
+    const messageId = cleanValue(body.messageId);
+    const replyText = cleanValue(body.text);
+
+    if (!messageId) {
+      return NextResponse.json(
+        { error: "Nedostaje ID poruke za reply." },
+        { status: 400 }
+      );
+    }
+
+    if (!replyText) {
+      return NextResponse.json(
+        { error: "Unesite tekst odgovora." },
+        { status: 400 }
+      );
+    }
+
+    const { data: original, error: readError } = await supabase
+      .from("messages")
+      .select("*")
+      .eq("id", messageId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (readError || !original) {
+      return NextResponse.json(
+        { error: "Originalna poruka nije pronađena." },
+        { status: 404 }
+      );
+    }
+
+    if (!original.sender_email_id) {
+      return NextResponse.json(
+        { error: "Poruka nema povezan sender email." },
+        { status: 400 }
+      );
+    }
+
     const { data: senderRow, error: senderError } = await supabase
       .from("sender_emails")
       .select("id,email")
-      .eq("id", senderEmailId)
+      .eq("id", original.sender_email_id)
       .eq("user_id", user.id)
       .maybeSingle();
 
     if (senderError || !senderRow) {
       return NextResponse.json(
-        { error: "Izabrani sender email nije pronađen." },
+        { error: "Sender email nije pronađen." },
         { status: 404 }
       );
     }
 
-    let proposal = proposalTextInput;
-    let subject = cleanValue(body.subject);
+    const toAddress =
+      original.direction === "inbound"
+        ? original.from_address
+        : original.to_address;
 
-    if (!proposal) {
-      const generated = await generateProposalText(
-        {
-          companyName: body.companyName,
-          profession: body.profession,
-          city: body.city,
-          address: body.address,
-          owner: body.owner,
-          email: recipientEmail,
-          proposalExampleText: body.proposalExampleText,
-        },
-        geminiKey
+    const normalizedTo = toAddress.trim();
+
+    if (!isValidEmail(normalizedTo)) {
+      return NextResponse.json(
+        { error: "Primalac reply-a nema ispravan email." },
+        { status: 400 }
       );
-
-      proposal = generated.proposal;
-      subject = generated.subject;
     }
 
-    if (!subject) {
-      subject = `Predlog saradnje — ${cleanValue(body.companyName) || "Vaš biznis"}`;
-    }
+    const subject = buildReplySubject(original.subject || "");
 
     const message = await insertOutboundMessage(supabase, {
       userId: user.id,
       senderEmailId: senderRow.id,
       from: senderRow.email,
-      to: recipientEmail,
+      to: normalizedTo,
       subject,
-      text: proposal,
+      text: replyText,
+      inReplyTo: original.id,
     });
 
     const sendResult = await sendEmail({
       from: senderRow.email,
-      to: recipientEmail,
+      to: normalizedTo,
       subject,
-      text: proposal,
+      text: replyText,
       tags: [{ name: "app_message_id", value: message.id }],
     });
 
@@ -125,11 +128,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      proposal,
-      subject,
-      from: senderRow.email,
-      to: recipientEmail,
-      messageId: message.id,
+      message,
       resendEmailId: sendResult?.id || null,
     });
   } catch (error: unknown) {

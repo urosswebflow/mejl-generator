@@ -1757,9 +1757,17 @@ export default function Home() {
                     <p className="mt-4 text-sm text-zinc-300">{user.email}</p>
 
                     <Link
-                      href="/settings"
+                      href="/inbox"
                       onClick={() => setProfileOpen(false)}
                       className="mt-4 inline-flex rounded-xl bg-zinc-800 px-4 py-2 text-sm font-semibold transition hover:bg-zinc-700"
+                    >
+                      Inbox
+                    </Link>
+
+                    <Link
+                      href="/settings"
+                      onClick={() => setProfileOpen(false)}
+                      className="mt-3 inline-flex rounded-xl bg-zinc-800 px-4 py-2 text-sm font-semibold transition hover:bg-zinc-700"
                     >
                       Mejlovi za slanje
                     </Link>

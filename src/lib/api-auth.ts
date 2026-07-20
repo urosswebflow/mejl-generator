@@ -20,6 +20,17 @@ function getSupabaseAdmin() {
   return createClient(url, anonKey);
 }
 
+export function getSupabaseServiceClient(): SupabaseClient | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !serviceRoleKey) {
+    return null;
+  }
+
+  return createClient(url, serviceRoleKey);
+}
+
 export function getAuthedSupabaseClient(
   request: NextRequest
 ): SupabaseClient | null {
