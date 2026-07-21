@@ -29,20 +29,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: authError }, { status: 401 });
     }
 
+    const body = await request.json();
     const geminiKey = process.env.GEMINI_API_KEY;
+    const nameOnly = body.nameOnly === true;
+    const proposalExampleText = cleanValue(body.proposalExampleText);
+    const senderEmailId = cleanValue(body.senderEmailId);
+    const recipientEmail = cleanValue(body.recipientEmail).toLowerCase();
+    const proposalTextInput = cleanValue(body.proposalText);
+    const replyToLatest = body.replyToLatest === true;
 
-    if (!geminiKey) {
+    if (!proposalTextInput && !nameOnly && !geminiKey) {
       return NextResponse.json(
         { error: "GEMINI_API_KEY nije pronađen u .env.local." },
         { status: 500 }
       );
     }
 
-    const body = await request.json();
-    const senderEmailId = cleanValue(body.senderEmailId);
-    const recipientEmail = cleanValue(body.recipientEmail).toLowerCase();
-    const proposalTextInput = cleanValue(body.proposalText);
-    const replyToLatest = body.replyToLatest === true;
+    if (!proposalTextInput && nameOnly && !proposalExampleText) {
+      return NextResponse.json(
+        { error: "Nedostaje tekst šablona za slanje." },
+        { status: 400 }
+      );
+    }
 
     if (!senderEmailId) {
       return NextResponse.json(
@@ -94,10 +102,9 @@ export async function POST(request: NextRequest) {
           owner: body.owner,
           email: recipientEmail,
           proposalExampleText: body.proposalExampleText,
-          nameOnlyMode: body.nameOnlyMode === true,
-          templateOwnerName: body.templateOwnerName,
+          nameOnly,
         },
-        geminiKey
+        geminiKey || ""
       );
 
       proposal = generated.proposal;

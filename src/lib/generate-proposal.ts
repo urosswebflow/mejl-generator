@@ -2,48 +2,7 @@ function cleanValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-export function extractOwnerNameFromTemplate(text: string) {
-  const firstLine = text.split(/\r?\n/)[0]?.trim() || "";
-  const match = firstLine.match(
-    /^(?:Zdravo|Poštovani|Poštovana|Ćao|Cao)\s+([^,\n]+),?\s*$/i
-  );
-
-  return match?.[1]?.trim() || null;
-}
-
-export function applyNameOnlyTemplate(
-  templateText: string,
-  ownerFirstName: string,
-  templateOwnerName?: string | null
-) {
-  const sampleName = templateOwnerName || extractOwnerNameFromTemplate(templateText);
-
-  if (sampleName && ownerFirstName) {
-    return templateText.split(sampleName).join(ownerFirstName);
-  }
-
-  if (sampleName && !ownerFirstName) {
-    return templateText
-      .split(sampleName)
-      .join("")
-      .replace(/^Zdravo\s*,?\s*/i, "Zdravo,\n")
-      .replace(/^Poštovani?\s*,?\s*/i, "Poštovani,\n");
-  }
-
-  if (ownerFirstName) {
-    return templateText.replace(
-      /^(Zdravo|Poštovani|Poštovana|Ćao|Cao)\s+[^,\n]+,/i,
-      `$1 ${ownerFirstName},`
-    );
-  }
-
-  return templateText.replace(
-    /^(Zdravo|Poštovani|Poštovana|Ćao|Cao)\s+[^,\n]+,/i,
-    "$1,"
-  );
-}
-
-function getFirstName(owner: string) {
+export function getOwnerFirstName(owner: string) {
   if (!owner) return "";
 
   const invalidValues = ["nije pronađen", "nije pronadjen", "n/a", "-", "/"];
@@ -217,6 +176,11 @@ Vrati samo email tekst.
 `;
 }
 
+export function applyNameOnlyTemplate(templateText: string, owner: string) {
+  const firstName = getOwnerFirstName(owner);
+  return templateText.replaceAll("{ime}", firstName);
+}
+
 export type ProposalInput = {
   companyName: string;
   profession: string;
@@ -225,8 +189,7 @@ export type ProposalInput = {
   owner: string;
   email: string;
   proposalExampleText?: string;
-  nameOnlyMode?: boolean;
-  templateOwnerName?: string | null;
+  nameOnly?: boolean;
 };
 
 export function buildProposalSubject(companyName: string) {
@@ -245,25 +208,24 @@ export async function generateProposalText(
   const owner = cleanValue(input.owner);
   const email = cleanValue(input.email);
   const proposalExampleText = cleanValue(input.proposalExampleText);
-  const nameOnlyMode = input.nameOnlyMode === true;
+  const nameOnly = input.nameOnly === true;
 
-  const firstName = getFirstName(owner);
-  const businessName = companyName || "Vaš biznis";
-
-  if (nameOnlyMode && proposalExampleText) {
+  if (nameOnly && proposalExampleText) {
     return {
-      proposal: applyNameOnlyTemplate(
-        proposalExampleText,
-        firstName,
-        input.templateOwnerName
-      ),
-      subject: buildProposalSubject(businessName),
+      proposal: applyNameOnlyTemplate(proposalExampleText, owner),
+      subject: buildProposalSubject(companyName),
     };
   }
 
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY nije pronađen u .env.local.");
+  }
+
+  const firstName = getOwnerFirstName(owner);
   const greeting = firstName ? `Zdravo ${firstName},` : "Zdravo,";
 
   const businessLabel = profession || "biznis";
+  const businessName = companyName || "Vaš biznis";
   const cityName = city || "Vašem gradu";
 
   const promptParams = {

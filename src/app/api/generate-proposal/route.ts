@@ -10,16 +10,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: authError }, { status: 401 });
     }
 
+    const body = await request.json();
+    const nameOnly = body.nameOnly === true;
     const apiKey = process.env.GEMINI_API_KEY;
 
-    if (!apiKey) {
+    if (!nameOnly && !apiKey) {
       return NextResponse.json(
         { error: "GEMINI_API_KEY nije pronađen u .env.local." },
         { status: 500 }
       );
     }
 
-    const body = await request.json();
     const { proposal, subject } = await generateProposalText(
       {
         companyName: body.companyName,
@@ -29,10 +30,9 @@ export async function POST(request: NextRequest) {
         owner: body.owner,
         email: body.email,
         proposalExampleText: body.proposalExampleText,
-        nameOnlyMode: body.nameOnlyMode === true,
-        templateOwnerName: body.templateOwnerName,
+        nameOnly,
       },
-      apiKey
+      apiKey || ""
     );
 
     return NextResponse.json({ proposal, subject });

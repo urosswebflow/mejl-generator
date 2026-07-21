@@ -3,7 +3,6 @@ import {
   getAuthedSupabaseClient,
   getUserFromRequest,
 } from "@/lib/api-auth";
-import { extractOwnerNameFromTemplate } from "@/lib/generate-proposal";
 import { extractProposalFileText } from "@/lib/parse-proposal-file";
 
 function cleanValue(value: unknown) {
@@ -28,9 +27,7 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await supabase
     .from("proposal_templates")
-    .select(
-      "id,name,content_text,original_filename,name_only_mode,template_owner_name,created_at"
-    )
+    .select("id,name,content_text,original_filename,name_only,created_at")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
@@ -61,6 +58,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const file = formData.get("file");
     const name = cleanValue(formData.get("name"));
+    const nameOnly = formData.get("nameOnly") === "true";
 
     if (!(file instanceof File)) {
       return NextResponse.json(
@@ -76,17 +74,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const nameOnlyMode = formData.get("nameOnlyMode") === "true";
-
     const buffer = Buffer.from(await file.arrayBuffer());
     const contentText = await extractProposalFileText(
       buffer,
       file.type,
       file.name
     );
-    const templateOwnerName = nameOnlyMode
-      ? extractOwnerNameFromTemplate(contentText)
-      : null;
+
+    if (nameOnly && !contentText.includes("{ime}")) {
+      return NextResponse.json(
+        {
+          error:
+            "Šablon sa opcijom „Menjaj samo ime“ mora da sadrži placeholder {ime}.",
+        },
+        { status: 400 }
+      );
+    }
 
     const { data, error } = await supabase
       .from("proposal_templates")
@@ -95,12 +98,9 @@ export async function POST(request: NextRequest) {
         name,
         content_text: contentText,
         original_filename: file.name,
-        name_only_mode: nameOnlyMode,
-        template_owner_name: templateOwnerName,
+        name_only: nameOnly,
       })
-      .select(
-        "id,name,content_text,original_filename,name_only_mode,template_owner_name,created_at"
-      )
+      .select("id,name,content_text,original_filename,name_only,created_at")
       .single();
 
     if (error) {
