@@ -317,6 +317,7 @@ export default function Home() {
 
   const [profession, setProfession] = useState("");
   const [city, setCity] = useState("");
+  const [country, setCountry] = useState("Srbija");
   const [limit, setLimit] = useState("");
   const [searchError, setSearchError] = useState("");
 
@@ -421,6 +422,7 @@ export default function Home() {
   const canSearch =
     profession.trim().length > 0 &&
     city.trim().length > 0 &&
+    country.trim().length > 0 &&
     isValidLeadLimitInput(limit);
 
   function revokeAvatarObjectUrl() {
@@ -638,6 +640,7 @@ export default function Home() {
       setLockedSenderEmailId(null);
       setProfession("");
       setCity("");
+      setCountry("Srbija");
       setLimit("");
       setSearchError("");
     }
@@ -842,6 +845,7 @@ export default function Home() {
     setProposalExampleFilename(item.proposal_example_filename || "");
     setActiveTemplateId(item.active_template_id || null);
     setExtractEmail(Boolean(item.extract_email));
+    setCountry("Srbija");
     setTemplateActionError("");
   }
 
@@ -996,6 +1000,7 @@ export default function Home() {
 
     const searchProfession = profession.trim();
     const searchCity = city.trim();
+    const searchCountry = country.trim();
     const searchContext = {
       profession: searchProfession,
       city: searchCity,
@@ -1012,6 +1017,7 @@ export default function Home() {
       const params = new URLSearchParams({
         profession: searchProfession,
         city: searchCity,
+        country: searchCountry,
         limit: limit.trim(),
         websiteFilter,
       });
@@ -1050,6 +1056,7 @@ export default function Home() {
       applySearchSenderState(null);
       setProfession("");
       setCity("");
+      setCountry("Srbija");
       setLimit("");
     } catch (error) {
       const message = requestErrorMessage(error);
@@ -1218,6 +1225,7 @@ export default function Home() {
     setProposalExampleFilename(item.proposal_example_filename || "");
     setActiveTemplateId(null);
     setExtractEmail(Boolean(item.extract_email));
+    setCountry("Srbija");
     setTemplateActionError("");
     applySearchSenderState(item.sender_email_id);
     setFiltersOpen(true);
@@ -1937,7 +1945,7 @@ export default function Home() {
             <h1 className="text-3xl font-bold sm:text-5xl">Mejl Generator</h1>
 
             <p className="mt-2 text-sm text-zinc-400 sm:mt-3 sm:text-base">
-              Unesi delatnost, grad i broj rezultata.
+              Unesi delatnost, grad, državu i broj rezultata.
             </p>
           </div>
 
@@ -2143,7 +2151,7 @@ export default function Home() {
         </div>
 
         <div className="rounded-2xl bg-zinc-900 p-4 sm:p-6">
-          <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
             <input
               value={profession}
               onChange={(e) => setProfession(e.target.value)}
@@ -2157,10 +2165,18 @@ export default function Home() {
               onChange={(e) => setCity(e.target.value)}
               autoComplete="off"
               className="rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3"
-              placeholder="Grad"
+              placeholder="Grad (npr. Beograd)"
             />
 
-            <div className="flex gap-2">
+            <input
+              value={country}
+              onChange={(e) => setCountry(e.target.value)}
+              autoComplete="off"
+              className="rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3"
+              placeholder="Država (npr. Srbija)"
+            />
+
+            <div className="flex gap-2 sm:col-span-2 lg:col-span-1">
             <input
               value={limit}
               onChange={(e) => setLimit(e.target.value)}

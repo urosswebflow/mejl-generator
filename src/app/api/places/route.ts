@@ -130,6 +130,7 @@ export async function GET(request: NextRequest) {
 
   const profession = searchParams.get("profession")?.trim() || "";
   const city = searchParams.get("city")?.trim() || "";
+  const country = searchParams.get("country")?.trim() || "";
   const limit = parseLeadLimit(searchParams.get("limit"));
   const filters = parseSearchFilters({
     websiteFilter: searchParams.get("websiteFilter"),
@@ -138,9 +139,9 @@ export async function GET(request: NextRequest) {
     extractEmail: searchParams.get("extractEmail"),
   });
 
-  if (!profession || !city) {
+  if (!profession || !city || !country) {
     return NextResponse.json(
-      { error: "Unesite delatnost i grad." },
+      { error: "Unesite delatnost, grad i državu." },
       { status: 400 }
     );
   }
@@ -152,12 +153,12 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const cityBounds = await geocodeCity(apiKey, city);
+  const cityBounds = await geocodeCity(apiKey, city, country);
 
   if (!cityBounds) {
     return NextResponse.json(
       {
-        error: `Grad "${city}" nije pronađen. Proverite naziv (npr. Beograd, Novi Sad).`,
+        error: `Lokacija "${city}, ${country}" nije pronađena. Proverite grad i državu.`,
       },
       { status: 400 }
     );

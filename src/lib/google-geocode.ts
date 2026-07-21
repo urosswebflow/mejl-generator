@@ -36,13 +36,63 @@ function parseViewport(geometry: GeocodeGeometry | undefined): CityViewport | nu
   };
 }
 
-/** Geokodira grad (Srbija) i vraća centar + radius za filter i mrežu pretrage. */
+function resolveGeocodeRegion(country: string) {
+  const normalized = country.trim().toLowerCase();
+
+  if (["srbija", "serbia", "rs"].includes(normalized)) {
+    return "rs";
+  }
+
+  if (
+    ["nemačka", "nemacka", "germany", "deutschland", "de"].includes(normalized)
+  ) {
+    return "de";
+  }
+
+  if (["hrvatska", "croatia", "hr"].includes(normalized)) {
+    return "hr";
+  }
+
+  if (
+    ["bosna i hercegovina", "bosnia and herzegovina", "ba"].includes(normalized)
+  ) {
+    return "ba";
+  }
+
+  if (
+    ["crna gora", "montenegro", "me"].includes(normalized)
+  ) {
+    return "me";
+  }
+
+  if (
+    ["severna makedonija", "north macedonia", "makedonija", "mk"].includes(
+      normalized
+    )
+  ) {
+    return "mk";
+  }
+
+  return null;
+}
+
+/** Geokodira grad + državu i vraća centar + radius za filter i mrežu pretrage. */
 export async function geocodeCity(
   apiKey: string,
-  city: string
+  city: string,
+  country: string
 ): Promise<CitySearchBounds | null> {
-  const address = `${city.trim()}, Serbia`;
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&region=rs&key=${apiKey}`;
+  const trimmedCity = city.trim();
+  const trimmedCountry = country.trim();
+
+  if (!trimmedCity || !trimmedCountry) {
+    return null;
+  }
+
+  const address = `${trimmedCity}, ${trimmedCountry}`;
+  const region = resolveGeocodeRegion(trimmedCountry);
+  const regionParam = region ? `&region=${region}` : "";
+  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}${regionParam}&key=${apiKey}`;
 
   const response = await fetch(url);
   const data = (await response.json()) as GeocodeResponse;
