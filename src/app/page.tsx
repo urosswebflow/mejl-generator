@@ -1502,6 +1502,8 @@ export default function Home() {
           address: lead.address,
           owner: lead.owner,
           email: lead.email,
+          reviews: lead.reviews ?? 0,
+          rating: lead.rating ?? null,
           proposalExampleText: activeProposalExampleText,
           nameOnly: activeNameOnly,
         }),
@@ -1561,6 +1563,8 @@ export default function Home() {
           proposalText: sendModalPreview,
           subject: sendModalSubject,
           replyToLatest: isFollowUp,
+          reviews: lead.reviews ?? 0,
+          rating: lead.rating ?? null,
         }),
       });
 
@@ -1756,6 +1760,8 @@ export default function Home() {
           address: lead.address,
           owner: lead.owner,
           email: lead.email,
+          reviews: lead.reviews ?? 0,
+          rating: lead.rating ?? null,
           proposalExampleText: activeProposalExampleText,
           nameOnly: activeNameOnly,
         }),
@@ -2751,13 +2757,15 @@ export default function Home() {
                   className="mt-1 h-4 w-4 rounded border-zinc-600 bg-zinc-950"
                 />
                 <span className="text-sm text-zinc-300">
-                  <span className="font-semibold text-zinc-100">
-                    Menjaj samo ime
-                  </span>
+                  <span className="font-semibold text-zinc-100">Bez AI</span>
                   <span className="mt-1 block text-xs text-zinc-500">
-                    Tekst ostaje identičan PDF-u. Zameni samo placeholder{" "}
-                    <code className="text-zinc-300">{`{ime}`}</code> prvim
-                    imenom vlasnika iz tabele.
+                    Tekst ostaje identičan fajlu. Zameni se samo ono što je
+                    označeno placeholderima:{" "}
+                    <code className="text-zinc-300">{`{ime}`}</code>,{" "}
+                    <code className="text-zinc-300">{`{naziv_firme}`}</code>,{" "}
+                    <code className="text-zinc-300">{`{broj_recenzija}`}</code>,{" "}
+                    <code className="text-zinc-300">{`{prosecna_ocena}`}</code>,{" "}
+                    <code className="text-zinc-300">{`{delatnost}`}</code>.
                   </span>
                 </span>
               </label>
@@ -2837,9 +2845,7 @@ export default function Home() {
                         <div className="min-w-0 flex-1">
                           <p className="font-semibold">{template.name}</p>
                           {template.name_only && (
-                            <p className="text-xs text-emerald-400">
-                              Menjaj samo ime
-                            </p>
+                            <p className="text-xs text-emerald-400">Bez AI</p>
                           )}
                           {template.original_filename && (
                             <p className="truncate text-xs text-zinc-500">

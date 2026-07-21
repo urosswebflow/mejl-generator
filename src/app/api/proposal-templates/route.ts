@@ -3,6 +3,7 @@ import {
   getAuthedSupabaseClient,
   getUserFromRequest,
 } from "@/lib/api-auth";
+import { templateHasPlaceholder } from "@/lib/generate-proposal";
 import { extractProposalFileText } from "@/lib/parse-proposal-file";
 
 function cleanValue(value: unknown) {
@@ -103,11 +104,11 @@ export async function POST(request: NextRequest) {
       file.name
     );
 
-    if (nameOnly && !contentText.includes("{ime}")) {
+    if (nameOnly && !templateHasPlaceholder(contentText)) {
       return NextResponse.json(
         {
           error:
-            "Šablon sa opcijom „Menjaj samo ime“ mora da sadrži placeholder {ime}.",
+            "Šablon sa opcijom „Bez AI“ mora da sadrži bar jedan placeholder: {ime}, {naziv_firme}, {broj_recenzija}, {prosecna_ocena} ili {delatnost}.",
         },
         { status: 400 }
       );

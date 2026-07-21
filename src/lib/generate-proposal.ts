@@ -195,9 +195,54 @@ Vrati samo email tekst.
 `;
 }
 
-export function applyNameOnlyTemplate(templateText: string, owner: string) {
-  const firstName = getOwnerFirstName(owner);
-  return templateText.replaceAll("{ime}", firstName);
+export const TEMPLATE_PLACEHOLDERS = [
+  "{ime}",
+  "{naziv_firme}",
+  "{broj_recenzija}",
+  "{prosecna_ocena}",
+  "{delatnost}",
+] as const;
+
+export function templateHasPlaceholder(content: string) {
+  return TEMPLATE_PLACEHOLDERS.some((placeholder) =>
+    content.includes(placeholder)
+  );
+}
+
+export type PlaceholderValues = {
+  owner: string;
+  companyName: string;
+  reviews?: number;
+  rating?: number | null;
+  profession: string;
+};
+
+export function applyPlaceholderTemplate(
+  templateText: string,
+  values: PlaceholderValues
+) {
+  const firstName = getOwnerFirstName(values.owner);
+  const companyName = values.companyName.trim();
+  const reviews = values.reviews ?? 0;
+  const rating =
+    values.rating != null && Number.isFinite(values.rating)
+      ? String(values.rating)
+      : "—";
+  const profession = values.profession.trim() || "business";
+
+  let text = templateText
+    .replaceAll("{ime}", firstName)
+    .replaceAll("{naziv_firme}", companyName)
+    .replaceAll("{broj_recenzija}", String(reviews))
+    .replaceAll("{prosecna_ocena}", rating)
+    .replaceAll("{delatnost}", profession);
+
+  if (!firstName) {
+    text = text.replace(/Hi\s+,/gi, "Hi,");
+    text = text.replace(/Zdravo\s+,/gi, "Zdravo,");
+  }
+
+  return text;
 }
 
 export type ProposalInput = {
@@ -207,6 +252,8 @@ export type ProposalInput = {
   address: string;
   owner: string;
   email: string;
+  reviews?: number;
+  rating?: number | null;
   proposalExampleText?: string;
   nameOnly?: boolean;
 };
@@ -232,7 +279,13 @@ export async function generateProposalText(
 
   if (nameOnly && proposalExampleText) {
     return {
-      proposal: applyNameOnlyTemplate(proposalExampleText, owner),
+      proposal: applyPlaceholderTemplate(proposalExampleText, {
+        owner,
+        companyName,
+        reviews: input.reviews,
+        rating: input.rating,
+        profession,
+      }),
       subject: buildProposalSubject(companyName),
     };
   }

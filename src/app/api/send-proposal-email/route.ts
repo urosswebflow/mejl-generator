@@ -101,6 +101,16 @@ export async function POST(request: NextRequest) {
           address: body.address,
           owner: body.owner,
           email: recipientEmail,
+          reviews:
+            typeof body.reviews === "number"
+              ? body.reviews
+              : Number.parseInt(String(body.reviews ?? ""), 10) || 0,
+          rating:
+            typeof body.rating === "number"
+              ? body.rating
+              : body.rating != null
+                ? Number.parseFloat(String(body.rating))
+                : null,
           proposalExampleText: body.proposalExampleText,
           nameOnly,
         },
