@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import Cropper from "react-easy-crop";
-import { Eye, Share2, Trash2 } from "lucide-react";
+import { Eye, Pencil, Share2, Trash2 } from "lucide-react";
 import {
   resolveGoogleMapsUrl,
   resolvePlaceId,
@@ -367,6 +367,7 @@ export default function Home() {
   const [sendModalSubject, setSendModalSubject] = useState("");
   const [sendModalLoading, setSendModalLoading] = useState(false);
   const [sendModalSending, setSendModalSending] = useState(false);
+  const [sendModalEditing, setSendModalEditing] = useState(false);
   const [sendModalError, setSendModalError] = useState("");
 
   const [view, setView] = useState<"results" | "history">("results");
@@ -1474,6 +1475,7 @@ export default function Home() {
     setSendModalError("");
     setSendModalLoading(false);
     setSendModalSending(false);
+    setSendModalEditing(false);
   }
 
   async function openSendModal(lead: Lead, index: number) {
@@ -1488,6 +1490,7 @@ export default function Home() {
     setSendModalError("");
     setSendModalLoading(true);
     setSendModalSending(false);
+    setSendModalEditing(false);
 
     try {
       const response = await authFetch("/api/generate-proposal", {
@@ -2968,12 +2971,42 @@ export default function Home() {
                     </div>
 
                     <div>
-                      <span className="mb-1 block text-xs uppercase tracking-wide text-zinc-500">
-                        Sadržaj
-                      </span>
-                      <pre className="max-h-[45vh] overflow-y-auto whitespace-pre-wrap rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-4 text-sm leading-relaxed">
-                        {sendModalPreview}
-                      </pre>
+                      <div className="mb-1 flex items-center justify-between gap-3">
+                        <span className="block text-xs uppercase tracking-wide text-zinc-500">
+                          Sadržaj
+                        </span>
+                        {!sendModalLoading && sendModalPreview && (
+                          <button
+                            type="button"
+                            onClick={() => setSendModalEditing((value) => !value)}
+                            className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                              sendModalEditing
+                                ? "bg-green-700 text-white"
+                                : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                            }`}
+                            title={
+                              sendModalEditing
+                                ? "Završi izmenu"
+                                : "Izmeni tekst pre slanja"
+                            }
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            {sendModalEditing ? "Gotovo" : "Izmeni"}
+                          </button>
+                        )}
+                      </div>
+                      {sendModalEditing ? (
+                        <textarea
+                          value={sendModalPreview}
+                          onChange={(e) => setSendModalPreview(e.target.value)}
+                          rows={16}
+                          className="max-h-[45vh] w-full resize-y rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-4 text-sm leading-relaxed outline-none focus:border-zinc-500"
+                        />
+                      ) : (
+                        <pre className="max-h-[45vh] overflow-y-auto whitespace-pre-wrap rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-4 text-sm leading-relaxed">
+                          {sendModalPreview}
+                        </pre>
+                      )}
                     </div>
 
                     {sendModalError && (
