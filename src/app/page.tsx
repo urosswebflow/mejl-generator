@@ -71,6 +71,8 @@ type ProposalTemplate = {
   original_filename: string | null;
   name_only: boolean;
   created_at: string;
+  user_id: string;
+  creator_email?: string | null;
 };
 
 type SharedSearchRow = {
@@ -2797,7 +2799,8 @@ export default function Home() {
               <div className="border-b border-zinc-800 p-5 sm:p-6">
                 <h3 className="text-xl font-bold">Izaberi šablon</h3>
                 <p className="mt-2 text-sm text-zinc-400">
-                  Jedan aktivan šablon važi za ovu pretragu.
+                  Jedan aktivan šablon važi za ovu pretragu. Vidljivi su svi
+                  timski šabloni.
                 </p>
               </div>
 
@@ -2808,7 +2811,10 @@ export default function Home() {
                   </p>
                 ) : (
                   <ul className="space-y-2">
-                    {templates.map((template) => (
+                    {templates.map((template) => {
+                      const canDeleteTemplate = user?.id === template.user_id;
+
+                      return (
                       <li
                         key={template.id}
                         className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3"
@@ -2832,6 +2838,11 @@ export default function Home() {
                               {template.original_filename}
                             </p>
                           )}
+                          {template.creator_email && (
+                            <p className="truncate text-xs text-zinc-500">
+                              Autor: {template.creator_email}
+                            </p>
+                          )}
                         </div>
                         <button
                           type="button"
@@ -2842,6 +2853,7 @@ export default function Home() {
                         >
                           <Eye className="h-4 w-4" />
                         </button>
+                        {canDeleteTemplate && (
                         <button
                           type="button"
                           onClick={() => void deleteTemplate(template.id)}
@@ -2851,8 +2863,10 @@ export default function Home() {
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
+                        )}
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                 )}
 

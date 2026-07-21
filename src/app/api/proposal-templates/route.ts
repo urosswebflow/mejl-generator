@@ -27,15 +27,37 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await supabase
     .from("proposal_templates")
-    .select("id,name,content_text,original_filename,name_only,created_at")
-    .eq("user_id", user.id)
+    .select("id,name,content_text,original_filename,name_only,created_at,user_id")
     .order("created_at", { ascending: false });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ templates: data || [] });
+  const templates = data || [];
+  const creatorIds = [
+    ...new Set(templates.map((item) => item.user_id).filter(Boolean)),
+  ] as string[];
+
+  let creatorEmails = new Map<string, string>();
+
+  if (creatorIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("id,email")
+      .in("id", creatorIds);
+
+    creatorEmails = new Map(
+      (profiles || []).map((profile) => [profile.id as string, profile.email as string])
+    );
+  }
+
+  const enrichedTemplates = templates.map((template) => ({
+    ...template,
+    creator_email: creatorEmails.get(template.user_id) || null,
+  }));
+
+  return NextResponse.json({ templates: enrichedTemplates });
 }
 
 export async function POST(request: NextRequest) {
@@ -100,7 +122,7 @@ export async function POST(request: NextRequest) {
         original_filename: file.name,
         name_only: nameOnly,
       })
-      .select("id,name,content_text,original_filename,name_only,created_at")
+      .select("id,name,content_text,original_filename,name_only,created_at,user_id")
       .single();
 
     if (error) {
@@ -114,7 +136,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ template: data });
+    return NextResponse.json({
+      template: {
+        ...data,
+        creator_email: user.email || null,
+      },
+    });
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : "Došlo je do greške.";
