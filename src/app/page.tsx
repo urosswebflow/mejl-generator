@@ -1531,7 +1531,12 @@ export default function Home() {
 
     const lead = leads[sendModalLeadIndex];
 
-    if (!lead || !canSendToLead(lead) || !sendModalPreview.trim()) {
+    if (
+      !lead ||
+      !canSendToLead(lead) ||
+      !sendModalPreview.trim() ||
+      !sendModalSubject.trim()
+    ) {
       return;
     }
 
@@ -2961,40 +2966,49 @@ export default function Home() {
                   <p className="text-red-400">{sendModalError}</p>
                 ) : (
                   <>
+                    {!sendModalLoading && sendModalPreview && (
+                      <div className="mb-4 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setSendModalEditing((value) => !value)}
+                          className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                            sendModalEditing
+                              ? "bg-green-700 text-white"
+                              : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                          }`}
+                          title={
+                            sendModalEditing
+                              ? "Završi izmenu"
+                              : "Izmeni subject i tekst pre slanja"
+                          }
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          {sendModalEditing ? "Gotovo" : "Izmeni"}
+                        </button>
+                      </div>
+                    )}
+
                     <div className="mb-4">
                       <span className="mb-1 block text-xs uppercase tracking-wide text-zinc-500">
                         Subject
                       </span>
-                      <p className="rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm">
-                        {sendModalSubject || "—"}
-                      </p>
+                      {sendModalEditing ? (
+                        <input
+                          value={sendModalSubject}
+                          onChange={(e) => setSendModalSubject(e.target.value)}
+                          className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm outline-none focus:border-zinc-500"
+                        />
+                      ) : (
+                        <p className="rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm">
+                          {sendModalSubject || "—"}
+                        </p>
+                      )}
                     </div>
 
                     <div>
-                      <div className="mb-1 flex items-center justify-between gap-3">
-                        <span className="block text-xs uppercase tracking-wide text-zinc-500">
-                          Sadržaj
-                        </span>
-                        {!sendModalLoading && sendModalPreview && (
-                          <button
-                            type="button"
-                            onClick={() => setSendModalEditing((value) => !value)}
-                            className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                              sendModalEditing
-                                ? "bg-green-700 text-white"
-                                : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
-                            }`}
-                            title={
-                              sendModalEditing
-                                ? "Završi izmenu"
-                                : "Izmeni tekst pre slanja"
-                            }
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                            {sendModalEditing ? "Gotovo" : "Izmeni"}
-                          </button>
-                        )}
-                      </div>
+                      <span className="mb-1 block text-xs uppercase tracking-wide text-zinc-500">
+                        Sadržaj
+                      </span>
                       {sendModalEditing ? (
                         <textarea
                           value={sendModalPreview}
@@ -3029,7 +3043,8 @@ export default function Home() {
                   disabled={
                     sendModalLoading ||
                     sendModalSending ||
-                    !sendModalPreview.trim()
+                    !sendModalPreview.trim() ||
+                    !sendModalSubject.trim()
                   }
                   className="rounded-xl bg-green-700 px-5 py-3 font-semibold transition hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
                 >
