@@ -70,6 +70,7 @@ type ProposalTemplate = {
   content_text: string;
   original_filename: string | null;
   name_only: boolean;
+  email_subject: string | null;
   created_at: string;
   user_id: string;
   creator_email?: string | null;
@@ -231,21 +232,31 @@ async function authFetch(url: string, init?: RequestInit) {
   return fetch(url, { ...init, headers });
 }
 
-async function authUploadTemplateFile(
-  url: string,
-  file: File,
-  name: string,
-  nameOnly: boolean
-) {
+async function authSubmitTemplateForm(options: {
+  method: "POST" | "PATCH";
+  file?: File | null;
+  name: string;
+  nameOnly: boolean;
+  emailSubject: string;
+  id?: string;
+}) {
   const token = await getAccessToken();
   const formData = new FormData();
 
-  formData.append("file", file);
-  formData.append("name", name);
-  formData.append("nameOnly", nameOnly ? "true" : "false");
+  formData.append("name", options.name);
+  formData.append("nameOnly", options.nameOnly ? "true" : "false");
+  formData.append("emailSubject", options.emailSubject);
 
-  return fetch(url, {
-    method: "POST",
+  if (options.method === "PATCH" && options.id) {
+    formData.append("id", options.id);
+  }
+
+  if (options.file) {
+    formData.append("file", options.file);
+  }
+
+  return fetch("/api/proposal-templates", {
+    method: options.method,
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -333,10 +344,14 @@ export default function Home() {
   const [templates, setTemplates] = useState<ProposalTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [createTemplateModalOpen, setCreateTemplateModalOpen] = useState(false);
+  const [editTemplateModalOpen, setEditTemplateModalOpen] = useState(false);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [editingTemplateFilename, setEditingTemplateFilename] = useState("");
   const [selectTemplateModalOpen, setSelectTemplateModalOpen] = useState(false);
   const [templateName, setTemplateName] = useState("");
   const [templateFile, setTemplateFile] = useState<File | null>(null);
   const [templateNameOnly, setTemplateNameOnly] = useState(false);
+  const [templateEmailSubject, setTemplateEmailSubject] = useState("");
   const [previewTemplate, setPreviewTemplate] = useState<ProposalTemplate | null>(
     null
   );
@@ -350,6 +365,8 @@ export default function Home() {
   const [activeProposalExampleText, setActiveProposalExampleText] =
     useState("");
   const [activeNameOnly, setActiveNameOnly] = useState(false);
+  const [activeTemplateEmailSubject, setActiveTemplateEmailSubject] =
+    useState("");
 
   const [senderEmails, setSenderEmails] = useState<SenderEmail[]>([]);
   const [selectedSenderEmailId, setSelectedSenderEmailId] = useState("");
@@ -518,11 +535,13 @@ export default function Home() {
   useEffect(() => {
     if (!activeTemplateId) {
       setActiveNameOnly(false);
+      setActiveTemplateEmailSubject("");
       return;
     }
 
     const template = templates.find((item) => item.id === activeTemplateId);
     setActiveNameOnly(Boolean(template?.name_only));
+    setActiveTemplateEmailSubject(template?.email_subject || "");
   }, [activeTemplateId, templates]);
 
   useEffect(() => {
@@ -852,12 +871,36 @@ export default function Home() {
     setTemplateActionError("");
   }
 
-  function openCreateTemplateModal() {
+  function resetTemplateFormFields() {
     setTemplateName("");
     setTemplateFile(null);
     setTemplateNameOnly(false);
+    setTemplateEmailSubject("");
+    setEditingTemplateId(null);
+    setEditingTemplateFilename("");
     setTemplateActionError("");
+  }
+
+  function openCreateTemplateModal() {
+    resetTemplateFormFields();
     setCreateTemplateModalOpen(true);
+  }
+
+  function openEditTemplateModal(template: ProposalTemplate) {
+    setEditingTemplateId(template.id);
+    setEditingTemplateFilename(template.original_filename || "");
+    setTemplateName(template.name);
+    setTemplateFile(null);
+    setTemplateNameOnly(Boolean(template.name_only));
+    setTemplateEmailSubject(template.email_subject || "");
+    setTemplateActionError("");
+    setEditTemplateModalOpen(true);
+  }
+
+  function closeTemplateFormModals() {
+    setCreateTemplateModalOpen(false);
+    setEditTemplateModalOpen(false);
+    resetTemplateFormFields();
   }
 
   function openSelectTemplateModal() {
@@ -881,12 +924,13 @@ export default function Home() {
     setTemplateActionError("");
 
     try {
-      const response = await authUploadTemplateFile(
-        "/api/proposal-templates",
-        templateFile,
-        templateName.trim(),
-        templateNameOnly
-      );
+      const response = await authSubmitTemplateForm({
+        method: "POST",
+        file: templateFile,
+        name: templateName.trim(),
+        nameOnly: templateNameOnly,
+        emailSubject: templateEmailSubject.trim(),
+      });
       const data = await response.json();
 
       if (!response.ok) {
@@ -895,10 +939,59 @@ export default function Home() {
 
       const template = data.template as ProposalTemplate;
       setTemplates((prev) => [template, ...prev]);
-      setCreateTemplateModalOpen(false);
-      setTemplateName("");
-      setTemplateFile(null);
-      setTemplateNameOnly(false);
+      closeTemplateFormModals();
+    } catch (error) {
+      setTemplateActionError(requestErrorMessage(error));
+    } finally {
+      setTemplateActionLoading(false);
+    }
+  }
+
+  async function updateTemplate() {
+    if (!editingTemplateId) {
+      return;
+    }
+
+    if (!templateName.trim()) {
+      setTemplateActionError("Unesite naziv šablona.");
+      return;
+    }
+
+    setTemplateActionLoading(true);
+    setTemplateActionError("");
+
+    try {
+      const response = await authSubmitTemplateForm({
+        method: "PATCH",
+        id: editingTemplateId,
+        file: templateFile,
+        name: templateName.trim(),
+        nameOnly: templateNameOnly,
+        emailSubject: templateEmailSubject.trim(),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Greška pri ažuriranju šablona.");
+      }
+
+      const template = data.template as ProposalTemplate;
+
+      setTemplates((prev) =>
+        prev.map((item) => (item.id === template.id ? template : item))
+      );
+
+      if (activeTemplateId === template.id) {
+        setActiveProposalExampleText(template.content_text);
+        setProposalExampleText(template.content_text);
+        setProposalExampleFilename(
+          template.original_filename || `${template.name}.txt`
+        );
+        setActiveNameOnly(Boolean(template.name_only));
+        setActiveTemplateEmailSubject(template.email_subject || "");
+      }
+
+      closeTemplateFormModals();
     } catch (error) {
       setTemplateActionError(requestErrorMessage(error));
     } finally {
@@ -924,6 +1017,7 @@ export default function Home() {
       );
       setActiveProposalExampleText(template.content_text);
       setActiveNameOnly(Boolean(template.name_only));
+      setActiveTemplateEmailSubject(template.email_subject || "");
       setActiveTemplateId(template.id);
 
       if (activeHistoryId) {
@@ -960,6 +1054,7 @@ export default function Home() {
         setProposalExampleText("");
         setProposalExampleFilename("");
         setActiveProposalExampleText("");
+        setActiveTemplateEmailSubject("");
 
         if (activeHistoryId) {
           await persistActiveTemplate(activeHistoryId, null);
@@ -1505,6 +1600,7 @@ export default function Home() {
           reviews: lead.reviews ?? 0,
           rating: lead.rating ?? null,
           proposalExampleText: activeProposalExampleText,
+          templateSubject: activeTemplateEmailSubject,
           nameOnly: activeNameOnly,
         }),
       });
@@ -1559,6 +1655,7 @@ export default function Home() {
           address: lead.address,
           owner: lead.owner,
           proposalExampleText: activeProposalExampleText,
+          templateSubject: activeTemplateEmailSubject,
           nameOnly: activeNameOnly,
           proposalText: sendModalPreview,
           subject: sendModalSubject,
@@ -1763,6 +1860,7 @@ export default function Home() {
           reviews: lead.reviews ?? 0,
           rating: lead.rating ?? null,
           proposalExampleText: activeProposalExampleText,
+          templateSubject: activeTemplateEmailSubject,
           nameOnly: activeNameOnly,
         }),
       });
@@ -2306,7 +2404,7 @@ export default function Home() {
                         Aktivan šablon: {proposalExampleFilename}
                       </p>
                     )}
-                    {templateActionError && !createTemplateModalOpen && !selectTemplateModalOpen && (
+                    {templateActionError && !createTemplateModalOpen && !editTemplateModalOpen && !selectTemplateModalOpen && (
                       <p className="mt-2 text-sm text-red-400">
                         {templateActionError}
                       </p>
@@ -2772,6 +2870,21 @@ export default function Home() {
 
               <label className="mt-4 block">
                 <span className="mb-2 block text-sm text-zinc-400">
+                  Naslov mejla (opciono)
+                </span>
+                <input
+                  value={templateEmailSubject}
+                  onChange={(e) => setTemplateEmailSubject(e.target.value)}
+                  placeholder="npr. Review Flow for {naziv_firme}"
+                  className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3"
+                />
+                <span className="mt-1 block text-xs text-zinc-500">
+                  Podržava iste placeholdere. Prazno = standardni naslov.
+                </span>
+              </label>
+
+              <label className="mt-4 block">
+                <span className="mb-2 block text-sm text-zinc-400">
                   PDF ili DOCX fajl
                 </span>
                 <input
@@ -2789,7 +2902,7 @@ export default function Home() {
               <div className="mt-6 flex justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => setCreateTemplateModalOpen(false)}
+                  onClick={closeTemplateFormModals}
                   disabled={templateActionLoading}
                   className="rounded-xl bg-zinc-800 px-5 py-3 font-semibold transition hover:bg-zinc-700"
                 >
@@ -2803,6 +2916,103 @@ export default function Home() {
                   className="rounded-xl bg-green-700 px-5 py-3 font-semibold transition hover:bg-green-600"
                 >
                   {templateActionLoading ? "Čuvanje..." : "Sačuvaj šablon"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {editTemplateModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center sm:p-6">
+            <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 p-5 shadow-xl sm:p-6">
+              <h3 className="text-xl font-bold">Izmeni šablon</h3>
+
+              <label className="mt-4 block">
+                <span className="mb-2 block text-sm text-zinc-400">
+                  Naziv šablona
+                </span>
+                <input
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  placeholder="npr. followup_1"
+                  className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3"
+                />
+              </label>
+
+              <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={templateNameOnly}
+                  onChange={(e) => setTemplateNameOnly(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-zinc-600 bg-zinc-950"
+                />
+                <span className="text-sm text-zinc-300">
+                  <span className="font-semibold text-zinc-100">Bez AI</span>
+                  <span className="mt-1 block text-xs text-zinc-500">
+                    Tekst ostaje identičan fajlu. Zameni se samo ono što je
+                    označeno placeholderima:{" "}
+                    <code className="text-zinc-300">{`{ime}`}</code>,{" "}
+                    <code className="text-zinc-300">{`{naziv_firme}`}</code>,{" "}
+                    <code className="text-zinc-300">{`{broj_recenzija}`}</code>,{" "}
+                    <code className="text-zinc-300">{`{prosecna_ocena}`}</code>,{" "}
+                    <code className="text-zinc-300">{`{delatnost}`}</code>.
+                  </span>
+                </span>
+              </label>
+
+              <label className="mt-4 block">
+                <span className="mb-2 block text-sm text-zinc-400">
+                  Naslov mejla (opciono)
+                </span>
+                <input
+                  value={templateEmailSubject}
+                  onChange={(e) => setTemplateEmailSubject(e.target.value)}
+                  placeholder="npr. Review Flow for {naziv_firme}"
+                  className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3"
+                />
+                <span className="mt-1 block text-xs text-zinc-500">
+                  Podržava iste placeholdere. Prazno = standardni naslov.
+                </span>
+              </label>
+
+              <label className="mt-4 block">
+                <span className="mb-2 block text-sm text-zinc-400">
+                  PDF ili DOCX fajl (opciono)
+                </span>
+                {editingTemplateFilename && (
+                  <p className="mb-2 text-xs text-zinc-500">
+                    Trenutni fajl: {editingTemplateFilename}
+                  </p>
+                )}
+                <input
+                  type="file"
+                  accept={PROPOSAL_UPLOAD_ACCEPT}
+                  onChange={(e) => setTemplateFile(e.target.files?.[0] || null)}
+                  className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-700 file:px-3 file:py-1 file:text-sm file:text-white"
+                />
+              </label>
+
+              {templateActionError && (
+                <p className="mt-3 text-sm text-red-400">{templateActionError}</p>
+              )}
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={closeTemplateFormModals}
+                  disabled={templateActionLoading}
+                  className="rounded-xl bg-zinc-800 px-5 py-3 font-semibold transition hover:bg-zinc-700"
+                >
+                  Otkaži
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void updateTemplate()}
+                  disabled={templateActionLoading}
+                  className="rounded-xl bg-green-700 px-5 py-3 font-semibold transition hover:bg-green-600"
+                >
+                  {templateActionLoading ? "Čuvanje..." : "Sačuvaj izmene"}
                 </button>
               </div>
             </div>
@@ -2867,6 +3077,17 @@ export default function Home() {
                         >
                           <Eye className="h-4 w-4" />
                         </button>
+                        {canDeleteTemplate && (
+                          <button
+                            type="button"
+                            onClick={() => openEditTemplateModal(template)}
+                            disabled={templateActionLoading}
+                            className="rounded-lg p-2 text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50"
+                            title="Izmeni šablon"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                        )}
                         {canDeleteTemplate && (
                         <button
                           type="button"

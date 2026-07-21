@@ -245,6 +245,25 @@ export function applyPlaceholderTemplate(
   return text;
 }
 
+export function buildProposalSubject(companyName: string) {
+  const name = companyName.trim() || "Vaš biznis";
+  return `Predlog saradnje — ${name}`;
+}
+
+export function resolveTemplateSubject(
+  templateSubject: string | undefined,
+  companyName: string,
+  values: PlaceholderValues
+) {
+  const custom = cleanValue(templateSubject);
+
+  if (!custom) {
+    return buildProposalSubject(companyName);
+  }
+
+  return applyPlaceholderTemplate(custom, values);
+}
+
 export type ProposalInput = {
   companyName: string;
   profession: string;
@@ -255,13 +274,9 @@ export type ProposalInput = {
   reviews?: number;
   rating?: number | null;
   proposalExampleText?: string;
+  templateSubject?: string;
   nameOnly?: boolean;
 };
-
-export function buildProposalSubject(companyName: string) {
-  const name = companyName.trim() || "Vaš biznis";
-  return `Predlog saradnje — ${name}`;
-}
 
 export async function generateProposalText(
   input: ProposalInput,
@@ -276,17 +291,22 @@ export async function generateProposalText(
   const proposalExampleText = cleanValue(input.proposalExampleText);
   const nameOnly = input.nameOnly === true;
   const usesDefaultTemplate = !proposalExampleText;
+  const placeholderValues: PlaceholderValues = {
+    owner,
+    companyName,
+    reviews: input.reviews,
+    rating: input.rating,
+    profession,
+  };
 
   if (nameOnly && proposalExampleText) {
     return {
-      proposal: applyPlaceholderTemplate(proposalExampleText, {
-        owner,
+      proposal: applyPlaceholderTemplate(proposalExampleText, placeholderValues),
+      subject: resolveTemplateSubject(
+        input.templateSubject,
         companyName,
-        reviews: input.reviews,
-        rating: input.rating,
-        profession,
-      }),
-      subject: buildProposalSubject(companyName),
+        placeholderValues
+      ),
     };
   }
 
@@ -363,6 +383,10 @@ export async function generateProposalText(
 
   return {
     proposal: rawProposal.trim(),
-    subject: buildProposalSubject(businessName),
+    subject: resolveTemplateSubject(
+      input.templateSubject,
+      businessName,
+      placeholderValues
+    ),
   };
 }

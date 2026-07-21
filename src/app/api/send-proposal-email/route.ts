@@ -112,6 +112,7 @@ export async function POST(request: NextRequest) {
                 ? Number.parseFloat(String(body.rating))
                 : null,
           proposalExampleText: body.proposalExampleText,
+          templateSubject: body.templateSubject,
           nameOnly,
         },
         geminiKey || ""
