@@ -14,6 +14,43 @@ export function getOwnerFirstName(owner: string) {
   return owner.trim().split(" ")[0] || "";
 }
 
+export type TemplateLanguage = "en" | "sr";
+
+const ENGLISH_MARKERS =
+  /\b(hi|hello|dear|kind regards|best regards|i came|your business|google reviews|would you|i'd be happy|i am|i'm|that's|don't|you're|we're|they're|every day|simply forget|reply to this email)\b/gi;
+
+const SERBIAN_MARKERS =
+  /\b(zdravo|poštovani|postovani|srdačan|srdačan pozdrav|vaš|vaše|želite|biste|firma|delatnost|predlog|saradnje|web sajt|beogradu|u beogradu|u nišu|biće mi drago|ukoliko vam|nemate web)\b/gi;
+
+export function detectTemplateLanguage(text: string): TemplateLanguage {
+  const sample = text.slice(0, 4000);
+  const serbianChars = (sample.match(/[šđčćžŠĐČĆŽ]/g) || []).length;
+
+  if (serbianChars >= 2) {
+    return "sr";
+  }
+
+  const englishHits = (sample.match(ENGLISH_MARKERS) || []).length;
+  const serbianHits = (sample.match(SERBIAN_MARKERS) || []).length;
+
+  if (englishHits > serbianHits) {
+    return "en";
+  }
+
+  return "sr";
+}
+
+export function buildTemplateGreeting(
+  firstName: string,
+  language: TemplateLanguage
+) {
+  if (language === "en") {
+    return firstName ? `Hi ${firstName},` : "Hi,";
+  }
+
+  return firstName ? `Zdravo ${firstName},` : "Zdravo,";
+}
+
 function buildDefaultTemplatePrompt(params: {
   greeting: string;
   businessLabel: string;
@@ -143,6 +180,7 @@ function buildStyleGuidePrompt(params: {
   firstName: string;
   email: string;
   proposalExampleText: string;
+  language: TemplateLanguage;
 }) {
   const {
     greeting,
@@ -153,9 +191,53 @@ function buildStyleGuidePrompt(params: {
     firstName,
     email,
     proposalExampleText,
+    language,
   } = params;
 
-  return `
+  const isEnglish = language === "en";
+  const unknownAddress = isEnglish ? "Unknown" : "Nije poznata";
+  const unknownName = isEnglish ? "not provided" : "nije uneto";
+  const unknownEmail = isEnglish ? "not provided" : "nije unet";
+
+  return isEnglish
+    ? `
+You are a professional copywriter for sales email proposals in English.
+
+Your task is to write ONLY the final email proposal body, without subject, markdown, or explanations.
+
+The user uploaded a proposal example to use as a STYLE GUIDE.
+You MUST follow the structure, length, paragraph order, tone, and style of that example.
+Do NOT copy the text verbatim — personalize it for the new business.
+
+MANDATORY:
+- The email must start exactly like this: ${greeting}
+- If an owner name exists, use only the first name in the greeting
+- Write in English only. Use the SAME language as the style guide example. Do NOT translate to Serbian or any other language.
+- Tone: friendly, clear, professional, persuasive, but not pushy
+- Do not invent data you do not have
+- Do not mention that you are AI
+- Do not write a subject line
+- Keep the same list/formatting style as in the example (bullets or line breaks, as uploaded)
+- Keep the signature and contact details from the example if present
+
+PERSONALIZATION DATA:
+Business name: ${businessName}
+Search category: ${businessLabel}
+City: ${cityName}
+Address: ${address || unknownAddress}
+Name for greeting: ${firstName || unknownName}
+Email: ${email || unknownEmail}
+
+PROPOSAL EXAMPLE (STYLE GUIDE — follow structure and tone):
+---
+${proposalExampleText}
+---
+
+Now write the final email for the new business.
+It must be very similar to the example in structure and style, but naturally adapted to the business and data above.
+Return only the email body text.
+`
+    : `
 Ti si profesionalni copywriter za prodajne email proposal-e na srpskom jeziku.
 
 Tvoj zadatak je da napišeš SAMO finalni email proposal, bez subjecta, bez markdown-a, bez objašnjenja.
@@ -168,7 +250,7 @@ OBAVEZNO:
 - Email mora početi ovako: ${greeting}
 - Nikada ne koristi "Poštovani"
 - Ako postoji ime vlasnika, koristi samo prvo ime u pozdravu
-- Piši srpski latinicom
+- Piši srpski latinicom. Koristi ISTI jezik kao primer. Ne prevodi na engleski niti na drugi jezik.
 - Ton: ljubazan, jasan, profesionalan, ubedljiv, ali nenapadan
 - Ne izmišljaj podatke koje nemaš
 - Ne spominji da si AI
@@ -180,9 +262,9 @@ PODACI ZA PERSONALIZACIJU:
 Naziv firme/biznisa: ${businessName}
 Delatnost iz pretrage: ${businessLabel}
 Grad: ${cityName}
-Adresa: ${address || "Nije poznata"}
-Ime za obraćanje: ${firstName || "nije uneto"}
-Email: ${email || "nije unet"}
+Adresa: ${address || unknownAddress}
+Ime za obraćanje: ${firstName || unknownName}
+Email: ${email || unknownEmail}
 
 PRIMER PROPOZALA (STYLE GUIDE — prati strukturu i ton):
 ---
@@ -245,20 +327,31 @@ export function applyPlaceholderTemplate(
   return text;
 }
 
-export function buildProposalSubject(companyName: string) {
-  const name = companyName.trim() || "Vaš biznis";
+export function buildProposalSubject(
+  companyName: string,
+  language: TemplateLanguage = "sr"
+) {
+  const name =
+    companyName.trim() ||
+    (language === "en" ? "your business" : "Vaš biznis");
+
+  if (language === "en") {
+    return `Partnership proposal — ${name}`;
+  }
+
   return `Predlog saradnje — ${name}`;
 }
 
 export function resolveTemplateSubject(
   templateSubject: string | undefined,
   companyName: string,
-  values: PlaceholderValues
+  values: PlaceholderValues,
+  language: TemplateLanguage = "sr"
 ) {
   const custom = cleanValue(templateSubject);
 
   if (!custom) {
-    return buildProposalSubject(companyName);
+    return buildProposalSubject(companyName, language);
   }
 
   return applyPlaceholderTemplate(custom, values);
@@ -300,12 +393,15 @@ export async function generateProposalText(
   };
 
   if (nameOnly && proposalExampleText) {
+    const language = detectTemplateLanguage(proposalExampleText);
+
     return {
       proposal: applyPlaceholderTemplate(proposalExampleText, placeholderValues),
       subject: resolveTemplateSubject(
         input.templateSubject,
         companyName,
-        placeholderValues
+        placeholderValues,
+        language
       ),
     };
   }
@@ -315,11 +411,14 @@ export async function generateProposalText(
   }
 
   const firstName = getOwnerFirstName(owner);
-  const greeting = firstName ? `Zdravo ${firstName},` : "Zdravo,";
+  const templateLanguage = proposalExampleText
+    ? detectTemplateLanguage(proposalExampleText)
+    : "sr";
+  const greeting = buildTemplateGreeting(firstName, templateLanguage);
 
-  const businessLabel = profession || "biznis";
-  const businessName = companyName || "Vaš biznis";
-  const cityName = city || "Vašem gradu";
+  const businessLabel = profession || (templateLanguage === "en" ? "business" : "biznis");
+  const businessName = companyName || (templateLanguage === "en" ? "your business" : "Vaš biznis");
+  const cityName = city || (templateLanguage === "en" ? "your city" : "Vašem gradu");
 
   const promptParams = {
     greeting,
@@ -335,6 +434,7 @@ export async function generateProposalText(
     ? buildStyleGuidePrompt({
         ...promptParams,
         proposalExampleText,
+        language: templateLanguage,
       })
     : buildDefaultTemplatePrompt(promptParams);
 
@@ -386,7 +486,8 @@ export async function generateProposalText(
     subject: resolveTemplateSubject(
       input.templateSubject,
       businessName,
-      placeholderValues
+      placeholderValues,
+      templateLanguage
     ),
   };
 }
