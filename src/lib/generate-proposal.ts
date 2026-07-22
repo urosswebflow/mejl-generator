@@ -22,8 +22,40 @@ const ENGLISH_MARKERS =
 const SERBIAN_MARKERS =
   /\b(zdravo|poštovani|postovani|srdačan|srdačan pozdrav|vaš|vaše|želite|biste|firma|delatnost|predlog|saradnje|web sajt|beogradu|u beogradu|u nišu|biće mi drago|ukoliko vam|nemate web)\b/gi;
 
+function getTemplateOpeningLine(text: string) {
+  const normalized = text.replace(/\r\n/g, "\n").trim();
+  const firstLine = normalized
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean);
+
+  return firstLine || normalized;
+}
+
+function stripTemplatePlaceholders(text: string) {
+  return text.replace(/\{[^}]+\}/g, " ");
+}
+
+function startsWithEnglishGreeting(text: string) {
+  const opening = stripTemplatePlaceholders(getTemplateOpeningLine(text)).trim();
+  return /^(hi|hello)\b/i.test(opening);
+}
+
+function startsWithSerbianGreeting(text: string) {
+  const opening = stripTemplatePlaceholders(getTemplateOpeningLine(text)).trim();
+  return /^zdravo\b/i.test(opening);
+}
+
 export function detectTemplateLanguage(text: string): TemplateLanguage {
-  const sample = text.slice(0, 4000);
+  if (startsWithEnglishGreeting(text)) {
+    return "en";
+  }
+
+  if (startsWithSerbianGreeting(text)) {
+    return "sr";
+  }
+
+  const sample = stripTemplatePlaceholders(text.slice(0, 4000));
   const serbianChars = (sample.match(/[šđčćžŠĐČĆŽ]/g) || []).length;
 
   if (serbianChars >= 2) {
